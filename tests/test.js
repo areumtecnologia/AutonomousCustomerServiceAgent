@@ -36,7 +36,7 @@ async function example() {
       }
     },
     sessionTTL:               20 * 60 * 1_000,    // 20 min
-    turnTimeoutMs:            240_000,             // 120 segundos (aumentado de 30s)
+    turnTimeoutMs:            60_000,             // 60 segundos (aumentado de 30s)
     maxVulnerabilityAttempts: 3,
     retryOptions:             { maxAttempts: 5, baseDelayMs: 800, maxDelayMs: 8000 },
   });

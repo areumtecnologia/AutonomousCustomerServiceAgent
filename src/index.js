@@ -438,14 +438,19 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
       ...this.#retryOptions,
 
       retryIf: (err) => {
+        // Timeout de turno do agente — retentável
+        if (err?.message?.includes('Turno excedeu')) {
+          return true;
+        }
+
         // Timeout local
         if (err?.message?.includes('timed out')) {
-          return false;
+          return true;
         }
 
         // AbortController timeout
         if (err?.name === 'AbortError') {
-          return false;
+          return true;
         }
 
         // Gemini/Internal server errors
@@ -479,10 +484,6 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
           depth,
         });
 
-        console.warn(
-          `[Retry] Tentativa ${attempt} em ${Math.round(delay)}ms`,
-          error?.message || error
-        );
       },
     },
   );
