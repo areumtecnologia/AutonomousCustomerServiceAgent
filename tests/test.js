@@ -1,7 +1,7 @@
 require('dotenv').config();
 
 const GOOGLE_GEMINI_API_KEY = process.env.GOOGLE_GEMINI_API_KEY;
-const { AutonomousCustomerServiceAgent, Type, AgentEvents } = require('../src/index');
+const { AutonomousCustomerServiceAgent, Type, AgentEvents } = require('@areumtecnologia/autonomouscustomerserviceagent');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Exemplo de uso completo (multi-turno com tool call real)

@@ -916,5 +916,36 @@ ${this.#agent.mission.instructions}
 `;
   }
 }
+// Uma classe para armazenar e gerenciar agentes
+class AgentManager {
+  constructor() {
+    this.agents = new Map();
+  }
 
-module.exports = { AutonomousCustomerServiceAgent, AgentEvents, Type };
+  add(agent) {
+    if (!(agent instanceof AutonomousCustomerServiceAgent)) {
+      throw new TypeError('Only instances of AutonomousCustomerServiceAgent can be added.');
+    }
+    this.agents.set(agent.#agent.name, agent);
+  }
+
+  get(name) {
+    return this.agents.get(name);
+  }
+
+  remove(name) {
+    return this.agents.delete(name);
+  }
+
+  list() {
+    return Array.from(this.agents.keys());
+  }
+
+  clear() {
+    this.agents.clear();
+  }
+}
+
+module.exports = { AutonomousCustomerServiceAgent, AgentEvents, Type, AgentManager };
+
+  

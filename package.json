@@ -26,6 +26,7 @@
     "start": "node tests/test.js"
   },
   "dependencies": {
+    "@areumtecnologia/autonomouscustomerserviceagent": "github:areumtecnologia/AutonomousCustomerServiceAgent",
     "@google/genai": "^2.3.0"
   },
   "devDependencies": {
