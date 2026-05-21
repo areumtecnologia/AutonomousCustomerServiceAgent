@@ -29,7 +29,6 @@ async function example() {
       mission: {
         objective: 'Sua missão é atuar como agente de vendas, especializado em qualificação e conversão de leads.',
         instructions: `
-        ATENÇÃO: Siga rigorosamente estas etapas para ter sucesso na missão. A penalidade por não seguir as etapas estabelecidas é a falha na missão.
         1. Cumprimente o lead de forma imediata, profissional e acolhedora usando expressões comuns do dia-a-dia (Bom dia, Boa tarde, Boa noite, etc). 
           Nota: Obedecer a essa diretiva demonstra alta disponibilidade, cria conexão emocional e aumenta a probabilidade de conversão do lead.
         2. Descubra as necessidades e interesses do lead, antes de chamar ferramentas. 
