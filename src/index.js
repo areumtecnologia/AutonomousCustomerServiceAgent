@@ -29,6 +29,9 @@ const AgentEvents = Object.freeze({
   VULNERABILITY_EXPLORATION_DETECTED: 'vulnerability_exploration_detected',  // Tentativa de exploração detectada
   LEAD_CLASSIFIED:        'lead_classified',          // Classificação do lead atualizada
   ERROR:                  'error',                   // Erro irrecuperável
+  SERVICE_UNAVAILABLE:    'service_unavailable',     // Serviço temporariamente indisponível (graceful shutdown)
+  RECOVERY_SCHEDULED:     'recovery_scheduled',      // Tentativa automática de recuperação agendada
+  RECOVERY_ATTEMPT:       'recovery_attempt',        // Tentativa automática de recuperação
   TURN_START:             'turn_start',              // Início de um turno do loop
   TURN_END:               'turn_end',               // Fim de um turno do loop
   SESSION_CREATED:        'session_created',         // Nova sessão criada
@@ -51,6 +54,13 @@ class AgentSession {
   /** @type {boolean}  */ terminated = false;
   /** @type {Date}     */ createdAt = new Date();
   /** @type {Date}     */ lastActivity = new Date();
+  
+  // ── Campos para gestão de erros e recuperação ──────────────────────────────
+  /** @type {boolean}  */ inErrorState = false;
+  /** @type {string}   */ lastErrorMessage = null;
+  /** @type {number}   */ recoveryAttempts = 0;
+  /** @type {object}   */ recoveryTimer = null;
+  /** @type {Function} */ recoveryCallback = null;
 
   #ttlTimer = null;
   #onExpire;
@@ -72,6 +82,13 @@ class AgentSession {
   cancelTTL() {
     if (this.#ttlTimer) { clearTimeout(this.#ttlTimer); this.#ttlTimer = null; }
   }
+  
+  cancelRecoveryTimer() {
+    if (this.recoveryTimer) { 
+      clearTimeout(this.recoveryTimer); 
+      this.recoveryTimer = null; 
+    }
+  }
 
   appendHistory(...turns) { this.history.push(...turns); }
 
@@ -82,6 +99,8 @@ class AgentSession {
       classification: this.classification,
       vulnerabilityCount: this.vulnerabilityCount,
       terminated: this.terminated,
+      inErrorState: this.inErrorState,
+      recoveryAttempts: this.recoveryAttempts,
       createdAt: this.createdAt,
       lastActivity: this.lastActivity,
       turns: this.history.length,
@@ -166,6 +185,8 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
   #topP;
   #thinkingLevel;
   #maxOutputTokens;
+  #recoveryIntervalMs;
+  #errorMessages;
 
   /**
    * @param {object} options
@@ -182,6 +203,8 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
    * @param {number}   [options.topP=0.95]                 Probabilidade de manter as probabilidades mais altas
    * @param {number}   [options.thinkingLevel="MINIMAL"]     Nível de raciocínio interno
    * @param {number}   [options.maxOutputTokens=32768]     Tokens máximos para evitar resposta cortada
+   * @param {number}   [options.recoveryIntervalMs=300000] ms entre tentativas automáticas de recuperação (5 min padrão)
+   * @param {object}   [options.errorMessages={}]          Mensagens customizáveis { unavailable_pt_br?, unavailable_en_us? }
    */
   constructor({
     apiKey,
@@ -197,6 +220,8 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
     topP                     = 0.95,
     thinkingLevel            = "MINIMAL",
     maxOutputTokens          = 32768,
+    recoveryIntervalMs       = 5 * 60 * 1_000,
+    errorMessages            = {},
   } = {}) {
     super();
     if (!apiKey)   throw new TypeError('[AgentCSA] apiKey é obrigatório.');
@@ -217,6 +242,12 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
     this.#topP                    = topP;
     this.#thinkingLevel           = thinkingLevel;
     this.#maxOutputTokens         = maxOutputTokens;
+    this.#recoveryIntervalMs      = recoveryIntervalMs;
+    this.#errorMessages           = {
+      unavailable_pt_br: 'No momento estamos com uma indisponibilidade nos sistemas, mas não se preocupe. Assim que for possível darei continuidade em seu atendimento.',
+      unavailable_en_us: 'We are currently experiencing system unavailability. Please do not worry, we will continue your service as soon as possible.',
+      ...errorMessages,
+    };
   }
 
   // ── Session Management ────────────────────────────────────────────────────
@@ -244,6 +275,7 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
     const session = this.#sessions.get(sessionId);
     if (!session) return false;
     session.cancelTTL();
+    session.cancelRecoveryTimer();
     this.#sessions.delete(sessionId);
     this.emit(AgentEvents.SESSION_CLEARED, { sessionId });
     return true;
@@ -302,38 +334,86 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
   /**
    * Processa uma mensagem do lead dentro de uma sessão existente.
    * Gerencia o histórico completo (incluindo turns intermediários de tool calls).
+   * Com tratamento abrangente de erros e graceful degradation.
    *
    * @param {string} message    Texto da mensagem do lead
    * @param {string} sessionId  ID retornado por createSession()
-   * @returns {Promise<object>} AgentResponse estruturada
+   * @returns {Promise<object>} AgentResponse estruturada ou resposta de indisponibilidade
    */
   async processMessage(message, sessionId) {
-    const session = this.#sessions.get(sessionId);
-    if (!session) throw new Error(`[AgentCSA] Sessão "${sessionId}" não encontrada.`);
+    try {
+      const session = this.#sessions.get(sessionId);
+      if (!session) throw new Error(`[AgentCSA] Sessão "${sessionId}" não encontrada.`);
 
-    // Sessão encerrada por violação de segurança
-    if (session.terminated) return this.#terminatedResponse(session);
+      // Sessão encerrada por violação de segurança
+      if (session.terminated) return this.#terminatedResponse(session);
 
-    // Renova TTL a cada atividade
-    session.touch();
-    session.scheduleTTL(this.#sessionTTL);
+      // Se a sessão está em estado de erro, retorna mensagem de indisponibilidade e agenda recovery
+      if (session.inErrorState) {
+        this.#scheduleRecovery(session);
+        return this.#unavailableResponse(session);
+      }
 
-    const userTurn = this.#buildUserTurn(session, message);
-    session.appendHistory(userTurn);
+      // Renova TTL a cada atividade
+      session.touch();
+      session.scheduleTTL(this.#sessionTTL);
 
-    // O agentic loop trabalha em cópia do histórico.
-    // Retorna { result, extraTurns } — turns intermediários gerados pelo loop.
-    const { result, extraTurns } = await this.#agenticLoop(
-      [...session.history],
-      this.#getConfig(),
-      0,
-      session,
-    );
+      const userTurn = this.#buildUserTurn(session, message);
+      session.appendHistory(userTurn);
 
-    // Persiste todos os turns gerados (tool calls + results + resposta final do modelo)
-    if (extraTurns.length) session.appendHistory(...extraTurns);
+      // O agentic loop trabalha em cópia do histórico.
+      // Retorna { result, extraTurns } — turns intermediários gerados pelo loop.
+      const { result, extraTurns } = await this.#agenticLoop(
+        [...session.history],
+        this.#getConfig(),
+        0,
+        session,
+      );
 
-    return result;
+      // Persiste todos os turns gerados (tool calls + results + resposta final do modelo)
+      if (extraTurns.length) session.appendHistory(...extraTurns);
+
+      // Limpa estado de erro se estava previamente em erro
+      if (session.inErrorState) {
+        session.inErrorState = false;
+        session.recoveryAttempts = 0;
+        session.cancelRecoveryTimer();
+      }
+
+      return result;
+    } catch (err) {
+      // ── Tratamento abrangente de TODOS os erros ────────────────────────────
+      const session = this.#sessions.get(sessionId);
+      
+      if (session) {
+        const errorMsg = err?.message || String(err);
+        session.inErrorState = true;
+        session.lastErrorMessage = errorMsg;
+        
+        // Emite evento de erro
+        this.emit(AgentEvents.ERROR, { 
+          error: err, 
+          sessionId: session.id,
+          message: errorMsg,
+        });
+
+        // Emite evento de serviço indisponível (graceful shutdown)
+        this.emit(AgentEvents.SERVICE_UNAVAILABLE, {
+          sessionId: session.id,
+          errorMessage: errorMsg,
+          recoveryScheduled: true,
+        });
+
+        // Agenda tentativa automática de recuperação
+        this.#scheduleRecovery(session);
+
+        // Retorna resposta de indisponibilidade ao lead
+        return this.#unavailableResponse(session);
+      }
+
+      // Se não conseguir recuperar a sessão, propaga o erro
+      throw err;
+    }
   }
 
   /** Referência estática para os nomes de eventos. */
@@ -360,13 +440,7 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
     this.emit(AgentEvents.RAW_RESPONSE, { rawResponse, sessionId: session.id });
 
     const candidate = rawResponse.candidates?.[0];
-    if (!candidate) {
-      const err = new Error('[AgentCSA] Modelo não retornou candidatos.');
-      this.emit(AgentEvents.ERROR, { error: err, sessionId: session.id });
-      throw err;
-    }
-
-    const parts             = candidate.content?.parts ?? [];
+    const parts = candidate.content?.parts ?? [];
     const functionCallParts = parts.filter(p => p.functionCall);
 
     // ── Branch A: o modelo quer chamar tools ────────────────────────────────
@@ -392,11 +466,6 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
 
     // ── Branch B: resposta textual/JSON final ────────────────────────────────
     const textPart = parts.find(p => p.text);
-    if (!textPart) {
-      const err = new Error('[AgentCSA] Modelo retornou parts sem texto nem function_call.');
-      this.emit(AgentEvents.ERROR, { error: err, sessionId: session.id });
-      throw err;
-    }
 
     const parsed = this.#parseResponse(textPart.text);
 
@@ -432,7 +501,25 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
   async #callModelWithRetry(contents, config, session, depth) {
   return withRetry(
     async () => {
-      return await this.#callModelWithTimeout(contents, config);
+      const rawResponse = await this.#callModelWithTimeout(contents, config);
+      
+      // ── Validação da resposta para detectar erros transientes ─────
+      const candidate = rawResponse.candidates?.[0];
+      if (!candidate) {
+        throw new Error('[AgentCSA] Modelo não retornou candidatos.');
+      }
+
+      const parts = candidate.content?.parts ?? [];
+      
+      // Valida que há pelo menos ALGO na resposta (text ou functionCall)
+      const hasText = parts.some(p => p.text);
+      const hasFunction = parts.some(p => p.functionCall);
+      
+      if (!hasText && !hasFunction) {
+        throw new Error('[AgentCSA] Modelo retornou parts sem texto nem function_call.');
+      }
+
+      return rawResponse;
     },
     {
       ...this.#retryOptions,
@@ -450,6 +537,12 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
 
         // AbortController timeout
         if (err?.name === 'AbortError') {
+          return true;
+        }
+
+        // Erros de resposta inválida do modelo — retentáveis (transientes)
+        if (err?.message?.includes('Modelo não retornou candidatos') ||
+            err?.message?.includes('Modelo retornou parts sem texto nem function_call')) {
           return true;
         }
 
@@ -604,6 +697,82 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
         _parse_error:         true,
       };
     }
+  }
+
+  /**
+   * Retorna resposta de indisponibilidade com mensagem customizável.
+   * Pode ser enviada ao lead para informar sobre problema temporário.
+   * @private
+   */
+  #unavailableResponse(session) {
+    return {
+      action:               'answer',
+      sent_at:              new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }),
+      reasoning:            { 
+        en_us: 'Service temporarily unavailable. Recovery attempt scheduled.',
+        pt_br: `Serviço temporariamente indisponível. Tentativa de recuperação agendada em ${Math.round(this.#recoveryIntervalMs / 1000)}s.` 
+      },
+      lead_data:            { name: session.lead.name, phone: session.lead.phone },
+      classification:       'under_review',
+      purchase_probability: 0,
+      response:             this.#errorMessages.unavailable_pt_br,
+      response_en_us:       this.#errorMessages.unavailable_en_us,
+      service_unavailable:  true,
+      recovery_scheduled:   true,
+      recovery_attempts:    session.recoveryAttempts,
+    };
+  }
+
+  /**
+   * Agenda uma tentativa automática de recuperação.
+   * Tenta periodicamente retomar o atendimento do lead.
+   * @private
+   */
+  #scheduleRecovery(session) {
+    if (session.recoveryTimer) {
+      // Já existe timer de recovery agendado, não agenda outro
+      return;
+    }
+
+    session.recoveryAttempts++;
+    
+    const scheduleTime = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+    
+    this.emit(AgentEvents.RECOVERY_SCHEDULED, {
+      sessionId: session.id,
+      attempt: session.recoveryAttempts,
+      nextRetryMs: this.#recoveryIntervalMs,
+      scheduledAt: scheduleTime,
+    });
+
+    // Agenda tentativa em X minutos
+    session.recoveryTimer = setTimeout(async () => {
+      session.recoveryTimer = null;
+      
+      // Verifica se sessão ainda está ativa
+      if (!this.#sessions.has(session.id)) {
+        return;
+      }
+
+      this.emit(AgentEvents.RECOVERY_ATTEMPT, {
+        sessionId: session.id,
+        attempt: session.recoveryAttempts,
+        attemptedAt: new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }),
+      });
+
+      // Se a sessão ainda está em erro, limpa o flag
+      if (session.inErrorState) {
+        session.inErrorState = false;
+        this.emit(AgentEvents.RECOVERY_ATTEMPT, {
+          sessionId: session.id,
+          attempt: session.recoveryAttempts,
+          status: 'cleared',
+          message: 'Sessão pronta para retomar atendimento',
+        });
+      }
+    }, this.#recoveryIntervalMs);
+
+    session.recoveryTimer.unref?.(); // não bloqueia shutdown do processo
   }
 
   /**

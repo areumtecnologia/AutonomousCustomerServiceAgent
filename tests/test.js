@@ -5,6 +5,13 @@ const { AutonomousCustomerServiceAgent, Type, AgentEvents } = require('../src/in
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Exemplo de uso completo (multi-turno com tool call real)
+// 
+// Recursos de Tratamento de Erros e Recovery:
+//   • SERVICE_UNAVAILABLE: Emitido quando há erro irrecuperável
+//   • RECOVERY_SCHEDULED: Tentativa automática agendada em X minutos
+//   • RECOVERY_ATTEMPT: Tentativa de recuperação em execução
+//   • inErrorState: Flag que marca sessão em erro (graceful degradation)
+//   • Resposta de indisponibilidade customizável (errorMessages)
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function example() {
@@ -39,6 +46,11 @@ async function example() {
     turnTimeoutMs:            60_000,             // 60 segundos (aumentado de 30s)
     maxVulnerabilityAttempts: 3,
     retryOptions:             { maxAttempts: 5, baseDelayMs: 800, maxDelayMs: 8000 },
+    recoveryIntervalMs:       10_000,             // 10 segundos para teste (padrão é 5 min)
+    errorMessages: {
+      unavailable_pt_br: 'No momento estamos com uma indisponibilidade nos sistemas, mas não se preocupe! Assim que for possível darei continuidade em seu atendimento.',
+      unavailable_en_us: 'We are currently experiencing system unavailability. Please do not worry, we will continue your service as soon as possible.',
+    }
   });
 
   // ── Eventos ───────────────────────────────────────────────────────────────
@@ -65,6 +77,29 @@ async function example() {
     .on(AgentEvents.ERROR,           ({ error, source }) => {
       const msg = error?.message || error?.error?.message || String(error);
       console.error(`\x1b[31m%s\x1b[0m`, `[Erro]${source ? ` [${source}]` : ''} - ${msg}`);
+    })
+    .on(AgentEvents.SERVICE_UNAVAILABLE, ({ sessionId, errorMessage, recoveryScheduled }) => {
+      console.warn(`\x1b[33m%s\x1b[0m`, `[⚠️  Serviço Indisponível] Sessão ${sessionId}`);
+      console.warn(`\x1b[33m%s\x1b[0m`, `  → Erro: ${errorMessage}`);
+      if (recoveryScheduled) {
+        console.warn(`\x1b[33m%s\x1b[0m`, `  → Recovery agendado: Será feita tentativa automática de recuperação`);
+      }
+    })
+    .on(AgentEvents.RECOVERY_SCHEDULED, ({ sessionId, attempt, nextRetryMs, scheduledAt }) => {
+      const nextRetrySeconds = Math.round(nextRetryMs / 1000);
+      console.log(`\x1b[36m%s\x1b[0m`, `[📅 Recovery Agendado] Sessão ${sessionId}`);
+      console.log(`\x1b[36m%s\x1b[0m`, `  → Tentativa #${attempt} agendada para ${nextRetrySeconds}s`);
+      console.log(`\x1b[36m%s\x1b[0m`, `  → Marcado em: ${scheduledAt}`);
+    })
+    .on(AgentEvents.RECOVERY_ATTEMPT, ({ sessionId, attempt, status, message, attemptedAt }) => {
+      if (status === 'cleared') {
+        console.log(`\x1b[32m%s\x1b[0m`, `[✅ Recovery Bem-sucedido] Sessão ${sessionId}`);
+        console.log(`\x1b[32m%s\x1b[0m`, `  → Status: ${message}`);
+      } else {
+        console.log(`\x1b[36m%s\x1b[0m`, `[🔄 Recovery Tentativa] Sessão ${sessionId}`);
+        console.log(`\x1b[36m%s\x1b[0m`, `  → Tentativa #${attempt} em progresso`);
+        console.log(`\x1b[36m%s\x1b[0m`, `  → Horário: ${attemptedAt}`);
+      }
     });
 
 
@@ -179,6 +214,13 @@ async function example() {
     // console.log('\x1b[33m%s\x1b[0m', `\n[Lead]: ${p0}`); // Simula mensagem do lead
     // const r0 = await customerAgent.processMessage(p0, sessionId);
 
+    // Observação: Qualquer erro durante processMessage agora resulta em:
+    //   1. Evento ERROR emitido com detalhes do erro
+    //   2. Evento SERVICE_UNAVAILABLE emitido
+    //   3. Resposta de indisponibilidade retornada ao lead (graceful degradation)
+    //   4. Recovery automático agendado (RECOVERY_SCHEDULED)
+    //   5. Se recovery bem-sucedido, RECOVERY_ATTEMPT com status='cleared'
+
     // Turno 1 → agente atenderá o lead com boas-vindas
     console.log('\x1b[33m%s\x1b[0m', `\n[Lead]: Olá!`); // Simula mensagem do lead
     const r1 = await customerAgent.processMessage('Olá!', sessionId);
@@ -205,6 +247,16 @@ async function example() {
     customerAgent.clearSession(sessionId);
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Verificar estado de erro em resposta do agente:
+// 
+//   if (response.service_unavailable) {
+//     console.log('Serviço indisponível, recovery agendado');
+//     console.log('Tentativas:', response.recovery_attempts);
+//   }
+// ─────────────────────────────────────────────────────────────────────────────
+
 // Delay entre execuções
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
