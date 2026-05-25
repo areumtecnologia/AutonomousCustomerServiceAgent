@@ -1021,19 +1021,19 @@ class AgentManager {
     this.agents = new Map();
   }
 
-  add(agent) {
+  add(id, agent) {
     if (!(agent instanceof AutonomousCustomerServiceAgent)) {
       throw new TypeError('Only instances of AutonomousCustomerServiceAgent can be added.');
     }
-    this.agents.set(agent.agentName, agent);
+    this.agents.set(id, agent);
   }
 
-  get(name) {
-    return this.agents.get(name);
+  get(id) {
+    return this.agents.get(id);
   }
 
-  remove(name) {
-    return this.agents.delete(name);
+  remove(id) {
+    return this.agents.delete(id);
   }
 
   list() {
