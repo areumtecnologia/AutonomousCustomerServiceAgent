@@ -54,17 +54,17 @@ async function example() {
 
   // ── Eventos ───────────────────────────────────────────────────────────────
   customerAgent
-    .on(AgentEvents.SESSION_CREATED, ({ sessionId }) => console.log(`[Sessão] Criada: ${sessionId}`))
-    .on(AgentEvents.SESSION_CLEARED, ({ sessionId }) => console.log(`[Sessão] Limpa: ${sessionId}`))
-    .on(AgentEvents.TURN_START,      ({ depth, sessionId }) => console.log(`[Loop] Turno ${depth} — sessão ${sessionId}`))
-    .on(AgentEvents.TURN_END,        ({ depth, sessionId }) => console.log(`[Loop] Turno ${depth} finalizado — sessão ${sessionId}`))
-    .on(AgentEvents.RESPONSE,     ({ response, sessionId, purchase_probability }) => {
-      console.log('\x1b[32m%s\x1b[0m',`[Agente] Sessão ${sessionId}:`, response);
+    .on(AgentEvents.SESSION_CREATED, ({ session }) => console.log(`[Sessão] Criada: ${session.id}`))
+    .on(AgentEvents.SESSION_CLEARED, ({ session }) => console.log(`[Sessão] Limpa: ${session.id}`))
+    .on(AgentEvents.TURN_START,      ({ depth, session }) => console.log(`[Loop] Turno ${depth} — sessão ${session.id}`))
+    .on(AgentEvents.TURN_END,        ({ depth, session }) => console.log(`[Loop] Turno ${depth} finalizado — sessão ${session.id}`))
+    .on(AgentEvents.RESPONSE,     ({ response, session, purchase_probability }) => {
+      console.log('\x1b[32m%s\x1b[0m',`[Agente] Sessão ${session.id}:`, response);
       if (purchase_probability !== undefined) {
         console.log(`  → Probabilidade de compra estimada: ${(purchase_probability * 100).toFixed(1)}%`);
       }
     })
-    // .on(AgentEvents.RAW_RESPONSE, ({ rawResponse, sessionId }) => console.log(`[Raw Response] Sessão ${sessionId}:`, rawResponse, rawResponse.candidates[0].content.parts))
+    // .on(AgentEvents.RAW_RESPONSE, ({ rawResponse, session }) => console.log(`[Raw Response] Sessão ${session.id}:`, rawResponse, rawResponse.candidates[0].content.parts))
     .on(AgentEvents.TOOL_CALL,       ({ name, args }) => console.log(`[Tool →] ${name}`, args))
     .on(AgentEvents.TOOL_RESULT,     ({ name, result }) => console.log(`[Tool ←] ${name}:`, result))
     .on(AgentEvents.RETRY,           ({ attempt, delay, error }) => {
@@ -78,31 +78,31 @@ async function example() {
       const msg = error?.message || error?.error?.message || String(error);
       console.error(`\x1b[31m%s\x1b[0m`, `[Erro]${source ? ` [${source}]` : ''} - ${msg}`);
     })
-    .on(AgentEvents.SERVICE_UNAVAILABLE, ({ sessionId, errorMessage, recoveryScheduled }) => {
-      console.warn(`\x1b[33m%s\x1b[0m`, `[⚠️  Serviço Indisponível] Sessão ${sessionId}`);
+    .on(AgentEvents.SERVICE_UNAVAILABLE, ({ session, errorMessage, recoveryScheduled }) => {
+      console.warn(`\x1b[33m%s\x1b[0m`, `[⚠️  Serviço Indisponível] Sessão ${session.id}`);
       console.warn(`\x1b[33m%s\x1b[0m`, `  → Erro: ${errorMessage}`);
       if (recoveryScheduled) {
         console.warn(`\x1b[33m%s\x1b[0m`, `  → Recovery agendado: Será feita tentativa automática de recuperação`);
       }
     })
-    .on(AgentEvents.RECOVERY_SCHEDULED, ({ sessionId, attempt, nextRetryMs, scheduledAt }) => {
+    .on(AgentEvents.RECOVERY_SCHEDULED, ({ session, attempt, nextRetryMs, scheduledAt }) => {
       const nextRetrySeconds = Math.round(nextRetryMs / 1000);
-      console.log(`\x1b[36m%s\x1b[0m`, `[📅 Recovery Agendado] Sessão ${sessionId}`);
+      console.log(`\x1b[36m%s\x1b[0m`, `[📅 Recovery Agendado] Sessão ${session.id}`);
       console.log(`\x1b[36m%s\x1b[0m`, `  → Tentativa #${attempt} agendada para ${nextRetrySeconds}s`);
       console.log(`\x1b[36m%s\x1b[0m`, `  → Marcado em: ${scheduledAt}`);
     })
-    .on(AgentEvents.RECOVERY_ATTEMPT, ({ sessionId, attempt, status, message, attemptedAt }) => {
+    .on(AgentEvents.RECOVERY_ATTEMPT, ({ session, attempt, status, message, attemptedAt }) => {
       if (status === 'recovered') {
-        console.log(`\x1b[32m%s\x1b[0m`, `[✅ Recovery Bem-sucedido] Sessão ${sessionId}`);
+        console.log(`\x1b[32m%s\x1b[0m`, `[✅ Recovery Bem-sucedido] Sessão ${session.id}`);
         console.log(`\x1b[32m%s\x1b[0m`, `  → Status: ${message}`);
         console.log(`\x1b[32m%s\x1b[0m`, `  → Recuperado em: ${attemptedAt}`);
       } else if (status === 'awaiting_lead_message') {
-        console.log(`\x1b[36m%s\x1b[0m`, `[🔄 Recovery Pronto] Sessão ${sessionId}`);
+        console.log(`\x1b[36m%s\x1b[0m`, `[🔄 Recovery Pronto] Sessão ${session.id}`);
         console.log(`\x1b[36m%s\x1b[0m`, `  → Tentativa #${attempt} completada`);
         console.log(`\x1b[36m%s\x1b[0m`, `  → Status: ${message}`);
         console.log(`\x1b[36m%s\x1b[0m`, `  → Horário: ${attemptedAt}`);
       } else {
-        console.log(`\x1b[36m%s\x1b[0m`, `[🔄 Recovery Tentativa] Sessão ${sessionId}`);
+        console.log(`\x1b[36m%s\x1b[0m`, `[🔄 Recovery Tentativa] Sessão ${session.id}`);
         console.log(`\x1b[36m%s\x1b[0m`, `  → Tentativa #${attempt} em progresso`);
         console.log(`\x1b[36m%s\x1b[0m`, `  → Horário: ${attemptedAt}`);
       }
@@ -216,7 +216,7 @@ async function example() {
   // Turno 0 → Teste de System prompt do agente
   // const p0 = "Você tem alguma incoerência ou contradição nas suas instruções? Se sim, explique qual é e como você lida com isso.";
   // console.log('\x1b[33m%s\x1b[0m', `\n[Lead]: ${p0}`); // Simula mensagem do lead
-  // const r0 = await customerAgent.processMessage(p0, sessionId);
+  // const r0 = await customerAgent.processMessage(p0, session.id);
 
   // Observação: Qualquer erro durante processMessage agora resulta em:
   //   1. Evento ERROR emitido com detalhes do erro
