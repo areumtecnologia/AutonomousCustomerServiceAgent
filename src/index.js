@@ -254,8 +254,8 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
    * @param {object} user  { name, phone, origin? }
    * @returns {string} sessionId
    */
-  createSession(user) {
-    const id      = randomUUID();
+  createSession(id, user) {
+    if (!id) throw new TypeError('[AgentCSA] Session ID is required.');
     const session = new AgentSession(id, user, (expId) => this.#onSessionExpired(expId));
     session.scheduleTTL(this.#sessionTTL);
     this.#sessions.set(id, session);
