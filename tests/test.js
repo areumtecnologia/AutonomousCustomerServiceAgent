@@ -196,7 +196,7 @@ async function example() {
 
 
   // ── Conversa multi-turno ──────────────────────────────────────────────────
-  const sessionId = customerAgent.createSession({
+  const sessionId = customerAgent.createSession(Date.now().toString(), {
     name:   'Renan',
     phone:  '5591981648646',
     origin: { id: '12345', type: 'whatsapp', description: 'Lead via WhatsApp.' }
