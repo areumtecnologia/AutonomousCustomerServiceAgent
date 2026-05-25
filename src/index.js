@@ -14,7 +14,7 @@
  */
 
 const { EventEmitter } = require('events');
-const { GoogleGenAI, Type } = require('@google/genai');
+const { GoogleGenAI, Type, ThinkingLevel } = require('@google/genai');
 const { randomUUID } = require('crypto');
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1051,6 +1051,6 @@ class AgentManager {
   }
 }
 
-module.exports = { AutonomousCustomerServiceAgent, AgentEvents, Type, AgentManager };
+module.exports = { AutonomousCustomerServiceAgent, AgentEvents, Type, ThinkingLevel, AgentManager };
 
   
