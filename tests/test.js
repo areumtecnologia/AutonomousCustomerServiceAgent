@@ -64,6 +64,7 @@ async function example() {
         console.log(`  → Probabilidade de compra estimada: ${(purchase_probability * 100).toFixed(1)}%`);
       }
     })
+    // .on(AgentEvents.RAW_RESPONSE, ({ rawResponse, sessionId }) => console.log(`[Raw Response] Sessão ${sessionId}:`, rawResponse, rawResponse.candidates[0].content.parts))
     .on(AgentEvents.TOOL_CALL,       ({ name, args }) => console.log(`[Tool →] ${name}`, args))
     .on(AgentEvents.TOOL_RESULT,     ({ name, result }) => console.log(`[Tool ←] ${name}:`, result))
     .on(AgentEvents.RETRY,           ({ attempt, delay, error }) => {
@@ -238,8 +239,8 @@ async function example() {
   const r2 = await customerAgent.processMessage('Quais os valores dos passeios de barco?', sessionId);
 
   // Turno 3 → agente usará a tool recém criada programaticamente 'check_availability'
-  console.log('\x1b[33m%s\x1b[0m', `\n[Lead]: Tem disponibilidade para o dia 20 de maio?`); // Simula mensagem do lead
-  const r3 = await customerAgent.processMessage('Tem disponibilidade para o dia 20 de maio?', sessionId);
+  console.log('\x1b[33m%s\x1b[0m', `\n[Lead]: Tem disponibilidade para o dia 30 de maio?`); // Simula mensagem do lead
+  const r3 = await customerAgent.processMessage('Tem disponibilidade para o dia 30 de maio?', sessionId);
 
   // Turno 4 - Cliente aceita a oferta
   console.log('\x1b[33m%s\x1b[0m', `\n[Lead]: Perfeito, quero reservar!`); // Simula mensagem do lead
