@@ -277,7 +277,7 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
       session.retryState = null;
     }
     this.#sessions.delete(sessionId);
-    this.emit(AgentEvents.SESSION_CLEARED, { sessionId });
+    this.emit(AgentEvents.SESSION_CLEARED, { sessionId, user: session.user });
     return true;
   }
 
@@ -761,7 +761,7 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
       session.retryState = null;
     }
     this.#sessions.delete(sessionId);
-    this.emit(AgentEvents.SESSION_EXPIRED, { sessionId });
+    this.emit(AgentEvents.SESSION_EXPIRED, { sessionId, user: session?.user });
   }
 
   // ── Helper: retry and unavailability handling ───────────────────────────
