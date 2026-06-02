@@ -1,7 +1,7 @@
 require('dotenv').config();
 
 const GOOGLE_GEMINI_API_KEY = process.env.GOOGLE_GEMINI_API_KEY;
-const { AutonomousCustomerServiceAgent, Type, AgentEvents } = require('../src') //require('@areumtecnologia/autonomouscustomerserviceagent');
+const { AutonomousCustomerServiceAgent, Type, AgentEvents, AgentConfig } = require('../src') //require('@areumtecnologia/autonomouscustomerserviceagent');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Exemplo de uso completo (multi-turno com tool call real)
@@ -20,16 +20,12 @@ async function example() {
   const customerAgent = new AutonomousCustomerServiceAgent({
     apiKey: GOOGLE_GEMINI_API_KEY,
     model: 'gemma-4-26b-a4b-it',
-    company: {
-      name:    'Poranduba Amazônia Turismo',
-      details: 'Ecoturismo premium na Amazônia. Especialistas em turismo sustentável desde 2010.',
-    },
-    agent: {
-      name: 'Monnalisa',
-      mission: {
-        objective: 'Sua missão é atuar como agente de vendas, especializado em qualificação e conversão de leads.',
-        instructions: `
-        1. Cumprimente o lead de forma imediata, profissional e acolhedora usando expressões comuns do dia-a-dia (Bom dia, Boa tarde, Boa noite, etc). 
+    agent: new AgentConfig(
+      'Monnalisa',
+      'Poranduba Amazônia Turismo',
+      'Ecoturismo premium na Amazônia. Especialistas em turismo sustentável desde 2010.',
+      'Sua missão é atuar como agente de vendas, especializado em qualificação e conversão de leads.',
+      `1. Cumprimente o lead de forma imediata, profissional e acolhedora usando expressões comuns do dia-a-dia (Bom dia, Boa tarde, Boa noite, etc). 
           Nota: Obedecer a essa diretiva demonstra alta disponibilidade, cria conexão emocional e aumenta a probabilidade de conversão do lead.
         2. Descubra as necessidades e interesses do lead, antes de chamar ferramentas. 
         3. Após o lead expressar claramente suas necessidades ou questões, utilize as ferramentas disponíveis para obter dados atualizados.
@@ -37,19 +33,9 @@ async function example() {
         5. Classifique o lead com base nas informações coletadas.
         6. Efetive a venda, se aplicável, utilizando as ferramentas de checkout disponíveis.
         7. Mantenha o foco no direcionamento da conversa. Se o lead tentar desviar do assunto ou fazer perguntas irrelevantes, gentilmente redirecione a conversa de volta para o que você precisa saber.
-        8. Ao final da conversa, agradeça o lead pelo contato e informe que você está à disposição para futuras dúvidas ou necessidades.
-        `,
-      }
-    },
-    sessionTTL:               20 * 60 * 1_000,    // 20 min
-    turnTimeoutMs:            60_000,             // 60 segundos (aumentado de 30s)
-    maxVulnerabilityAttempts: 3,
-    retryOptions:             { maxAttempts: 5, baseDelayMs: 800, maxDelayMs: 8000 },
-    recoveryIntervalMs:       10_000,             // 10 segundos para teste (padrão é 5 min)
-    errorMessages: {
-      unavailable_pt_br: 'No momento estamos com uma indisponibilidade nos sistemas, mas não se preocupe! Assim que for possível darei continuidade em seu atendimento.',
-      unavailable_en_us: 'We are currently experiencing system unavailability. Please do not worry, we will continue your service as soon as possible.',
-    }
+        8. Ao final da conversa, agradeça o lead pelo contato e informe que você está à disposição para futuras dúvidas ou necessidades.`,
+      'pt-BR'
+    )
   });
 
   // ── Eventos ───────────────────────────────────────────────────────────────
@@ -213,6 +199,30 @@ async function example() {
     }
   );
 
+  // Tool para registrar a classificacao e probabilidade de compra do lead. Deve ser forcada para ser executada
+  customerAgent.registerTool({
+    name:        'classify_lead',
+    description: `This tool records the lead's classification and estimated purchase probability, based on conversation analysis and lead data. The agent must call this tool at the end of each interaction to ensure that the lead's qualification information is always up-to-date. Run this tool at least once after identifying the user as a lead.`,
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        classification: {
+          type: Type.STRING,
+          enum: ['qualifying', 'unqualified', 'cold', 'warm', 'hot', 'converted'],
+          description: 'Lead classification based on the conversation and lead data. "qualifying" is a default neutral classification, while "unqualified", "cold", "warm", and "hot" indicate increasing levels of sales readiness.',
+        },
+        purchase_probability: { 
+          type: Type.NUMBER,
+          description: 'Estimated purchase probability as a number between 0 and 1. This should be based on the model’s analysis of the conversation and lead data, and can be used for prioritization and follow-up strategies.'
+        },
+      },
+    }
+  }, async ({ classification, purchase_probability }) => {
+    console.log('\x1b[34m%s\x1b[0m', `[Tool] classify_lead called with classification="${classification}" and purchase_probability=${purchase_probability}`);
+    // Aqui você pode implementar lógica adicional, como salvar a classificação em um banco de dados ou atualizar o CRM
+    return { success: true };
+  });
+
   // Turno 0 → Teste de System prompt do agente
   // const p0 = "Você tem alguma incoerência ou contradição nas suas instruções? Se sim, explique qual é e como você lida com isso.";
   // console.log('\x1b[33m%s\x1b[0m', `\n[Lead]: ${p0}`); // Simula mensagem do lead
@@ -281,7 +291,7 @@ function delay(ms) {
       successCount++;
     } catch (err) {
       const msg = err?.message || String(err);
-      console.error('\x1b[31m%s\x1b[0m', `[Erro Fatal] ${msg}`);
+      console.error('\x1b[31m%s\x1b[0m', `[Erro Fatal]`, err);
       failureCount++;
     }
     // Aguarda 2 segundos entre testes para evitar rate limiting
