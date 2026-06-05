@@ -19,7 +19,8 @@ async function example() {
 
   const customerAgent = new AutonomousCustomerServiceAgent({
     apiKey: GOOGLE_GEMINI_API_KEY,
-    model: 'gemma-4-26b-a4b-it',
+    // model: 'gemma-4-31b-it', // 'gemma-4-26b-a4b-it',
+    // temperature: 0.1,
     agent: new AgentConfig(
       'Monnalisa',
       'Poranduba Amazônia Turismo',
@@ -42,78 +43,48 @@ async function example() {
   customerAgent
     .on(AgentEvents.SESSION_CREATED, ({ session }) => console.log(`[Sessão] Criada: ${session.id}`))
     .on(AgentEvents.SESSION_CLEARED, ({ session }) => console.log(`[Sessão] Limpa: ${session.id}`))
-    .on(AgentEvents.TURN_START,      ({ depth, session }) => console.log(`[Loop] Turno ${depth} — sessão ${session.id}`))
-    .on(AgentEvents.TURN_END,        ({ depth, session }) => console.log(`[Loop] Turno ${depth} finalizado — sessão ${session.id}`))
-    .on(AgentEvents.RESPONSE,     ({ response, session, purchase_probability }) => {
-      console.log('\x1b[32m%s\x1b[0m',`[Agente] Sessão ${session.id}:`, response);
+    .on(AgentEvents.TURN_START, ({ depth, session }) => console.log(`[Loop] Turno ${depth} — sessão ${session.id}`))
+    .on(AgentEvents.TURN_END, ({ depth, session }) => console.log(`[Loop] Turno ${depth} finalizado — sessão ${session.id}`))
+    .on(AgentEvents.RESPONSE, ({ response, session, purchase_probability }) => {
+      console.log('\x1b[32m%s\x1b[0m', `[Agente] Sessão ${session.id}:`, response);
       if (purchase_probability !== undefined) {
         console.log(`  → Probabilidade de compra estimada: ${(purchase_probability * 100).toFixed(1)}%`);
       }
     })
     // .on(AgentEvents.RAW_RESPONSE, ({ rawResponse, session }) => console.log(`[Raw Response] Sessão ${session.id}:`, rawResponse, rawResponse.candidates[0].content.parts))
-    .on(AgentEvents.TOOL_CALL,       ({ name, args }) => console.log(`[Tool →] ${name}`, args))
-    .on(AgentEvents.TOOL_RESULT,     ({ name, result }) => console.log(`[Tool ←] ${name}:`, result))
-    .on(AgentEvents.RETRY,           ({ attempt, delay, error }) => {
+    .on(AgentEvents.TOOL_CALL, ({ name, args }) => console.log(`[Tool →] ${name}`, args))
+    .on(AgentEvents.TOOL_RESULT, ({ name, result }) => console.log(`[Tool ←] ${name}:`, result))
+    .on(AgentEvents.RETRY, ({ attempt, delay, error }) => {
       const msg = error?.message || error?.error?.message || String(error);
       console.warn(`[Retry] Tentativa ${attempt} em ${Math.round(delay)}ms - ${msg}`);
-    })    
+    })
     .on(AgentEvents.VULNERABILITY_EXPLORATION_DETECTED, ({ session, attempts }) => {
       console.error(`\x1b[31m%s\x1b[0m`, `[Vulnerability Exploration Detected] - ${session.id} has made ${attempts} attempts. Session details: ${JSON.stringify(session)}`);
     })
-    .on(AgentEvents.ERROR,           ({ error, source }) => {
+    .on(AgentEvents.ERROR, ({ error, source }) => {
       const msg = error?.message || error?.error?.message || String(error);
       console.error(`\x1b[31m%s\x1b[0m`, `[Erro]${source ? ` [${source}]` : ''} - ${msg}`);
-    })
-    .on(AgentEvents.SERVICE_UNAVAILABLE, ({ session, errorMessage, recoveryScheduled }) => {
-      console.warn(`\x1b[33m%s\x1b[0m`, `[⚠️  Serviço Indisponível] Sessão ${session.id}`);
-      console.warn(`\x1b[33m%s\x1b[0m`, `  → Erro: ${errorMessage}`);
-      if (recoveryScheduled) {
-        console.warn(`\x1b[33m%s\x1b[0m`, `  → Recovery agendado: Será feita tentativa automática de recuperação`);
-      }
-    })
-    .on(AgentEvents.RECOVERY_SCHEDULED, ({ session, attempt, nextRetryMs, scheduledAt }) => {
-      const nextRetrySeconds = Math.round(nextRetryMs / 1000);
-      console.log(`\x1b[36m%s\x1b[0m`, `[📅 Recovery Agendado] Sessão ${session.id}`);
-      console.log(`\x1b[36m%s\x1b[0m`, `  → Tentativa #${attempt} agendada para ${nextRetrySeconds}s`);
-      console.log(`\x1b[36m%s\x1b[0m`, `  → Marcado em: ${scheduledAt}`);
-    })
-    .on(AgentEvents.RECOVERY_ATTEMPT, ({ session, attempt, status, message, attemptedAt }) => {
-      if (status === 'recovered') {
-        console.log(`\x1b[32m%s\x1b[0m`, `[✅ Recovery Bem-sucedido] Sessão ${session.id}`);
-        console.log(`\x1b[32m%s\x1b[0m`, `  → Status: ${message}`);
-        console.log(`\x1b[32m%s\x1b[0m`, `  → Recuperado em: ${attemptedAt}`);
-      } else if (status === 'awaiting_lead_message') {
-        console.log(`\x1b[36m%s\x1b[0m`, `[🔄 Recovery Pronto] Sessão ${session.id}`);
-        console.log(`\x1b[36m%s\x1b[0m`, `  → Tentativa #${attempt} completada`);
-        console.log(`\x1b[36m%s\x1b[0m`, `  → Status: ${message}`);
-        console.log(`\x1b[36m%s\x1b[0m`, `  → Horário: ${attemptedAt}`);
-      } else {
-        console.log(`\x1b[36m%s\x1b[0m`, `[🔄 Recovery Tentativa] Sessão ${session.id}`);
-        console.log(`\x1b[36m%s\x1b[0m`, `  → Tentativa #${attempt} em progresso`);
-        console.log(`\x1b[36m%s\x1b[0m`, `  → Horário: ${attemptedAt}`);
-      }
     });
-
 
 
   // ── Registra NOVA tool programaticamente (informando o Schema completo) ───
   customerAgent.registerTool({
-      name:        'get_current_datetime',
-      description: 'Retorna a data e hora atual no fuso horário do Brasil (America/Sao_Paulo).',
-      parameters:  { type: Type.OBJECT, properties: {} },
-    }, async () =>
+    name: 'get_current_datetime',
+    description: 'Retorna a data e hora atual no fuso horário do Brasil (America/Sao_Paulo).',
+    parameters: { type: Type.OBJECT, properties: {} },
+  }, async () =>
     new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
   );
 
   customerAgent.registerTool({
-    name:        'get_product_data',
+    name: 'get_product_data',
     description: 'Obtém informações de produtos e serviços da empresa (preços, disponibilidade, detalhes) com base em tags ou palavras-chave.',
     parameters: {
       type: Type.OBJECT,
       properties: {
         tags: {
-          type:        Type.ARRAY,
-          items:       { type: Type.STRING, enum: productCategories },
+          type: Type.ARRAY,
+          items: { type: Type.STRING, enum: productCategories },
           description: 'Categorias a consultar. Null ou omitido retorna todas.',
         },
       },
@@ -154,74 +125,73 @@ async function example() {
   });
 
   customerAgent.registerTool({
-      name:        'checkout',
-      description: 'Finaliza a compra usando informacoes do lead, dos produtos/servicos selecionados e retorna os detalhes da transação.',
-      parameters:  { 
-        type: Type.OBJECT, 
-        properties: {
-          product_id: { 
-            type: Type.INTEGER, 
-            description: 'ID do produto a ser comprado.' 
+    name: 'checkout',
+    description: 'Finaliza a compra usando informacoes do lead, dos produtos/servicos selecionados e retorna os detalhes da transação.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        product_id: {
+          type: Type.INTEGER,
+          description: 'ID do produto a ser comprado.'
+        },
+        customer_info: {
+          type: Type.OBJECT,
+          properties: {
+            name: { type: Type.STRING, description: 'Nome do cliente.' },
+            phone: { type: Type.STRING, description: 'Telefone do cliente.' },
+            email: { type: Type.STRING, description: 'Email do cliente.' },
           },
-          customer_info: { 
-            type: Type.OBJECT,
-            properties: {
-              name: { type: Type.STRING, description: 'Nome do cliente.' },
-              phone: { type: Type.STRING, description: 'Telefone do cliente.' },
-              email: { type: Type.STRING, description: 'Email do cliente.' },
-            },
-          } 
         }
-      },
-    }, async () =>
-    { 
-      /* Lógica de checkout */ 
-      return JSON.stringify({ success: true, order_id: 'ABC123', message: 'Compra finalizada com sucesso!' });
-    }
+      }
+    },
+  }, async () => {
+    /* Lógica de checkout */
+    return JSON.stringify({ success: true, order_id: 'ABC123', message: 'Compra finalizada com sucesso!' });
+  }
   );
 
 
   // ── Conversa multi-turno ──────────────────────────────────────────────────
   const session = customerAgent.createSession(Date.now().toString(), {
-    name:   'Renan',
-    phone:  '5591981648646',
+    name: 'Renan',
+    phone: '5591981648646',
     origin: { id: '12345', type: 'whatsapp', description: 'Lead via WhatsApp.' }
   });
 
   customerAgent.registerTool({
-      name:        'clear_session',
-      description: 'Limpa a sessão atual, após concluir a conversa.',
-      parameters:  { type: Type.OBJECT, properties: {} },
-    }, async () =>{
-      console.log('\x1b[90m%s\x1b[0m', '[Tool] O Agente chamou clear_session - limpando sessão para encerrar conversa.');
-      customerAgent.clearSession(session.id)
+    name: 'clear_session',
+    description: 'Limpa a sessão atual, após concluir a conversa.',
+    parameters: { type: Type.OBJECT, properties: {} },
+  }, async () => {
+    console.log('\x1b[90m%s\x1b[0m', '[Tool] O Agente chamou clear_session - limpando sessão para encerrar conversa.');
+    customerAgent.clearSession(session.id)
 
-    }
+  }
   );
 
   // Tool para registrar a classificacao e probabilidade de compra do lead. Deve ser forcada para ser executada
-  customerAgent.registerTool({
-    name:        'classify_lead',
-    description: `This tool records the lead's classification and estimated purchase probability, based on conversation analysis and lead data. The agent must call this tool at the end of each interaction to ensure that the lead's qualification information is always up-to-date. Run this tool at least once after identifying the user as a lead.`,
-    parameters: {
-      type: Type.OBJECT,
-      properties: {
-        classification: {
-          type: Type.STRING,
-          enum: ['qualifying', 'unqualified', 'cold', 'warm', 'hot', 'converted'],
-          description: 'Lead classification based on the conversation and lead data. "qualifying" is a default neutral classification, while "unqualified", "cold", "warm", and "hot" indicate increasing levels of sales readiness.',
-        },
-        purchase_probability: { 
-          type: Type.NUMBER,
-          description: 'Estimated purchase probability as a number between 0 and 1. This should be based on the model’s analysis of the conversation and lead data, and can be used for prioritization and follow-up strategies.'
-        },
-      },
-    }
-  }, async ({ classification, purchase_probability }) => {
-    console.log('\x1b[34m%s\x1b[0m', `[Tool] classify_lead called with classification="${classification}" and purchase_probability=${purchase_probability}`);
-    // Aqui você pode implementar lógica adicional, como salvar a classificação em um banco de dados ou atualizar o CRM
-    return { success: true };
-  });
+  // customerAgent.registerTool({
+  //   name: 'reclassify_lead',
+  //   description: `This tool records the lead's classification and estimated purchase probability, based on conversation analysis and lead data. The agent must call this tool at the end of each interaction to ensure that the lead's qualification information is always up-to-date. Run this tool at least once after identifying the user as a lead. The initial value of purchase_probability is 0.`,
+  //   parameters: {
+  //     type: Type.OBJECT,
+  //     properties: {
+  //       classification: {
+  //         type: Type.STRING,
+  //         enum: ['qualifying', 'unqualified', 'cold', 'warm', 'hot', 'converted'],
+  //         description: 'Lead classification based on the conversation and lead data. "qualifying" is a default neutral classification, while "unqualified", "cold", "warm", and "hot" indicate increasing levels of sales readiness.',
+  //       },
+  //       purchase_probability: {
+  //         type: Type.NUMBER,
+  //         description: 'Estimated purchase probability as a number between 0 and 1. This should be based on the model’s analysis of the conversation and lead data, and can be used for prioritization and follow-up strategies.'
+  //       },
+  //     },
+  //   }
+  // }, async ({ classification, purchase_probability }) => {
+  //   console.log('\x1b[34m%s\x1b[0m', `[Tool] classify_lead called with classification="${classification}" and purchase_probability=${purchase_probability}`);
+  //   // Aqui você pode implementar lógica adicional, como salvar a classificação em um banco de dados ou atualizar o CRM
+  //   return { success: true };
+  // });
 
   // Turno 0 → Teste de System prompt do agente
   // const p0 = "Você tem alguma incoerência ou contradição nas suas instruções? Se sim, explique qual é e como você lida com isso.";
