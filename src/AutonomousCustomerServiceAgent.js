@@ -774,7 +774,7 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
                 },
                 reasoning: {
                     type: Type.STRING,
-                    description: `The model's reasoning in the language ${this.#agent.reasoningLang}. It should be clear and detailed, explaining the reasons behind its response, based on interactions with the user. This field is crucial for auditing and continuous improvement of the agent.`,
+                    description: `The model's reasoning in the language ${this.#agent.reasoningLanguage}. It should be clear and detailed, explaining the reasons behind its response, based on interactions with the user. This field is crucial for auditing and continuous improvement of the agent.`,
                 },
                 response: {
                     type: Type.STRING,
@@ -795,6 +795,7 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
 <identity>
     - Name: ${this.#agent.name}
     - Creator: Áreum Tecnologia (Software and AI Development Team)
+    - Reasoning Language: ${this.#agent.reasoningLanguage}
 </identity>
 
  ${this.#agent.company.name ? `<work_context>
