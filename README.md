@@ -1,6 +1,6 @@
 # Autonomous Customer Service Agent
 
-> **v2.0.5** — Agente autônomo de atendimento ao cliente baseado em IA, desenvolvido com Google Gemini. Suporta múltiplas sessões concorrentes, ferramentas customizadas, retry com backoff exponencial e modos de tratamento de falhas `sync` e `async`.
+> **v2.0.6** — Agente autônomo de atendimento ao cliente baseado em IA, desenvolvido com Google Gemini. Suporta múltiplas sessões concorrentes, ferramentas customizadas, retry com backoff exponencial e modos de tratamento de falhas `sync` e `async`.
 
 ---
 
@@ -142,15 +142,15 @@ Constrói a configuração do agente. **Obrigatório** — o construtor de `Auto
 | `sessionTTL` | `number` | `1800000` | TTL da sessão em ms (padrão: 30 min) |
 | `turnTimeoutMs` | `number` | `90000` | Timeout por turno do loop em ms |
 | `maxVulnerabilityAttempts` | `number` | `3` | Tentativas antes de encerrar a sessão |
-| `temperature` | `number` | `0.1` | Temperatura do modelo (0–1) |
+| `temperature` | `number` | `1` | Temperatura do modelo (0–1) |
 | `topP` | `number` | `0.95` | Probabilidade de núcleo (top-p sampling) |
-| `thinkingLevel` | `string` | `'MINIMAL'` | Nível de raciocínio interno do modelo |
+| `thinkingLevel` | `string` | `'HIGH'` | Nível de raciocínio interno do modelo |
 | `maxOutputTokens` | `number` | `32768` | Tokens máximos na resposta |
 | `failureHandlingMode` | `'sync' \| 'async'` | `'sync'` | Modo de tratamento de falhas |
 | `retryScheduleMinutes` | `number` | `5` | Intervalo entre tentativas agendadas (min) |
 | `retryScheduleAttempts` | `number` | `24` | Máximo de tentativas agendadas |
 | `retryScheduleWindowMs` | `number` | `86400000` | Janela total de retentativas (24h) |
-| `unavailabilityMessage` | `string` | Mensagem padrão em inglês | Mensagem exibida ao usuário em caso de indisponibilidade |
+| `unavailabilityMessage` | `string` | `'We are experiencing a temporary outage. We will contact you as soon as the problem is resolved.'` | Mensagem exibida ao usuário em caso de indisponibilidade |
 | `retryOptions` | `object` | `{ maxAttempts: 3, baseDelayMs: 900, maxDelayMs: 9000 }` | Opções do retry com backoff exponencial |
 
 ---
@@ -186,16 +186,16 @@ console.log(response.sent_at);     // Timestamp no fuso de Brasília
 
 Retorna um snapshot read-only da sessão.
 
-#### `agent.getSessionByLead(leadFilter)` → `SessionSnapshot | null`
+#### `agent.getSessionByUser(filter)` → `SessionSnapshot | null`
 
-Busca uma sessão por nome, telefone ou origem. Aceita string (nome ou telefone) ou objeto de filtro.
+Busca uma sessão por nome, telefone ou origem do usuário. Aceita string (nome ou telefone) ou objeto de filtro.
 
 ```javascript
 // Por telefone (string)
-const s1 = agent.getSessionByLead('5511999999999');
+const s1 = agent.getSessionByUser('5511999999999');
 
 // Por objeto de filtro composto
-const s2 = agent.getSessionByLead({
+const s2 = agent.getSessionByUser({
   name: 'Maria Souza',
   origin: { type: 'instagram' },
 });

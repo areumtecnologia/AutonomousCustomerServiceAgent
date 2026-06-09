@@ -74,7 +74,7 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
         unavailabilityMessage = 'We are experiencing a temporary outage. We will contact you as soon as the problem is resolved.',
         maxVulnerabilityAttempts = 3,
         temperature = 1,
-        topP = 0.75,
+        topP = 0.95,
         thinkingLevel = "HIGH",
         maxOutputTokens = 32_768,
     } = {}) {
@@ -155,36 +155,36 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
 
     /**
      * Retorna a primeira sessão encontrada para as informações do user.
-     * @param {object|string} leadFilter  Objeto com { name?, phone?, origin? } ou uma string de telefone/nome
+     * @param {object|string} filter  Objeto com { name?, phone?, origin? } ou uma string de telefone/nome
      * @returns {object|null}
      */
-    getSessionByLead(leadFilter) {
+    getSessionByUser(filter) {
         const session = Array.from(this.#sessions.values()).find((session) => {
-            if (typeof leadFilter === 'string') {
-                const normalizedFilter = String(leadFilter).trim().toLowerCase();
-                const leadName = String(session.user.name || '').trim().toLowerCase();
-                const leadPhone = this.#normalizePhone(String(session.user.phone || ''));
-                return leadName === normalizedFilter || leadPhone === this.#normalizePhone(leadFilter);
+            if (typeof filter === 'string') {
+                const normalizedFilter = String(filter).trim().toLowerCase();
+                const userName = String(session.user.name || '').trim().toLowerCase();
+                const userPhone = this.#normalizePhone(String(session.user.phone || ''));
+                return userName === normalizedFilter || userPhone === this.#normalizePhone(filter);
             }
 
-            if (typeof leadFilter !== 'object' || leadFilter === null) {
+            if (typeof filter !== 'object' || filter === null) {
                 return false;
             }
 
-            if (leadFilter.name) {
-                const normalizedFilter = String(leadFilter.name).trim().toLowerCase();
-                const leadName = String(session.user.name || '').trim().toLowerCase();
-                if (leadName !== normalizedFilter) return false;
+            if (filter.name) {
+                const normalizedFilter = String(filter.name).trim().toLowerCase();
+                const userName = String(session.user.name || '').trim().toLowerCase();
+                if (userName !== normalizedFilter) return false;
             }
 
-            if (leadFilter.phone) {
-                if (this.#normalizePhone(String(session.user.phone || '')) !== this.#normalizePhone(String(leadFilter.phone))) {
+            if (filter.phone) {
+                if (this.#normalizePhone(String(session.user.phone || '')) !== this.#normalizePhone(String(filter.phone))) {
                     return false;
                 }
             }
 
-            if (leadFilter.origin) {
-                const originFilter = leadFilter.origin;
+            if (filter.origin) {
+                const originFilter = filter.origin;
                 const sessionOrigin = session.user.origin || {};
 
                 if (typeof originFilter === 'string') {
@@ -559,11 +559,11 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     #emitSemanticEvents(parsed, session) {
-        // Eventos semânticos baseados na resposta do modelo - Atualmente sem uso, mas podem ser enriquecidos com base nas necessidades de negócio (ex: classificação de leads, detecção de intenções, etc)
+        // Eventos semânticos baseados na resposta do modelo - Atualmente sem uso, mas podem ser enriquecidos com base nas necessidades de negócio (ex: classificação de users, detecção de intenções, etc)
     }
 
     /**
-     * Consciência temporal do Lead:
+     * Consciência temporal do User:
      * Insere de forma explícita na mensagem do usuário a data e hora em que foi recebida.
      */
     #buildUserTurn(session, message) {
@@ -781,7 +781,11 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
     - Creator: Áreum Tecnologia (Software and AI Development Team)
 </identity>
 
- ${this.#agent.company.name ? `<work_context>
+<language>
+    - Reasoning: ${this.#agent.reasoningLanguage || 'en-US'}
+</language>
+
+${this.#agent.company.name ? `<work_context>
     - Company: ${this.#agent.company.name}
     - Company Details: ${this.#agent.company.details || 'No additional company details provided.'}
 </work_context>` : ''}

@@ -3,7 +3,7 @@
 // AgentConfig — construtor de configuração para o agente, usado internamente para complementar o prompt de sistema
 // ──────────────────────────────────────────────────────────────────────────────
 class AgentConfig {
-    constructor(agentName, agentCompanyName, agentCompanyDetails, missionObjective, missionInstructions, reasoningLanguage = 'en_us') {
+    constructor(agentName, agentCompanyName, agentCompanyDetails, missionObjective, missionInstructions, reasoningLanguage = 'en-US') {
         this.agentName = agentName;
         this.agentCompanyName = agentCompanyName;
         this.agentCompanyDetails = agentCompanyDetails;
