@@ -2,7 +2,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // AgentSession — encapsula todo o estado de uma conversa
 // ─────────────────────────────────────────────────────────────────────────────
-
+const { v4: uuid } = require('uuid');
 class AgentSession {
   /** @type {string}   */ id;
   /** @type {object}   */ user;
@@ -17,7 +17,7 @@ class AgentSession {
     #onExpire;
 
     constructor(id, user, onExpire) {
-        this.id = id;
+        this.id = id || uuid();
         this.user = Object.freeze({ ...user });
         this.#onExpire = onExpire;
     }

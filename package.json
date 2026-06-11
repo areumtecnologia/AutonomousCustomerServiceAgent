@@ -1,6 +1,6 @@
 {
   "name": "@areumtecnologia/autonomouscustomerserviceagent",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "Agente autônomo de atendimento ao cliente baseado em IA com Google Gemini API. Suporta múltiplas sessões, ferramentas customizadas e retry com backoff exponencial.",
   "license": "ISC",
   "author": "Áreum Tecnologia",
@@ -26,7 +26,8 @@
     "start": "node tests/test.js"
   },
   "dependencies": {
-    "@google/genai": "^2.8.0"
+    "@google/genai": "^2.8.0",
+    "uuid": "^14.0.0"
   },
   "devDependencies": {
     "dotenv": "^17.4.2"
