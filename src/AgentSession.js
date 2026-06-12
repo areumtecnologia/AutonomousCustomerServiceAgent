@@ -3,6 +3,8 @@
 // AgentSession — encapsula todo o estado de uma conversa -Incluir evento que dispara sempre que o historico e modificado
 // ─────────────────────────────────────────────────────────────────────────────
 const { v4: uuid } = require('uuid');
+const EventEmitter = require('events');
+
 class AgentSession extends EventEmitter {
   /** @type {string}   */ id;
   /** @type {object}   */ user;
@@ -17,6 +19,7 @@ class AgentSession extends EventEmitter {
     #onExpire;
 
     constructor(id, user, onExpire) {
+        super();
         this.id = id || uuid();
         this.user = Object.freeze({ ...user });
         this.#onExpire = onExpire;
