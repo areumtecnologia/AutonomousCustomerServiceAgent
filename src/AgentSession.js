@@ -1,9 +1,9 @@
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AgentSession — encapsula todo o estado de uma conversa
+// AgentSession — encapsula todo o estado de uma conversa -Incluir evento que dispara sempre que o historico e modificado
 // ─────────────────────────────────────────────────────────────────────────────
 const { v4: uuid } = require('uuid');
-class AgentSession {
+class AgentSession extends EventEmitter {
   /** @type {string}   */ id;
   /** @type {object}   */ user;
   /** @type {object[]} */ history = [];        // `contents` acumulado (todos os turns)
@@ -34,7 +34,22 @@ class AgentSession {
         if (this.#ttlTimer) { clearTimeout(this.#ttlTimer); this.#ttlTimer = null; }
     }
 
-    appendHistory(...turns) { this.history.push(...turns); }
+    appendHistory(...turns) {
+        this.history.push(...turns);
+        this.emit(AgentSessionEvents.HISTORY_UPDATED, this.history);
+    }
+
+    // Obtem o historico da conversa
+    getHistory() {
+        return this.history;
+    }
+
+    // Restaura o historico e turnos da conversa
+    setHistory(history) {
+        if (!Array.isArray(history)) throw new TypeError('[AgentSession] history must be an array.');
+        this.history = history;
+        this.emit(AgentSessionEvents.HISTORY_UPDATED, this.history);
+    }
 
     toJSON() {
         return {
@@ -45,8 +60,15 @@ class AgentSession {
             createdAt: this.createdAt,
             lastActivity: this.lastActivity,
             turns: this.history.length,
+            history: this.history,
+
         };
     }
 }
 
-module.exports = { AgentSession };
+// AgentSessionEvents
+const AgentSessionEvents = {
+    HISTORY_UPDATED: 'history_updated',
+};
+
+module.exports = { AgentSession, AgentSessionEvents };

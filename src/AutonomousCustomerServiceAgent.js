@@ -168,8 +168,13 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
      * @param {string} sessionId
      * @returns {object|null}
      */
-    getSession(sessionId) {
-        return this.#sessions.get(sessionId)?.toJSON() ?? null;
+    getSession(sessionId, isClone = false) {
+        if (isClone) {
+            const session = this.#sessions.get(sessionId);
+            if (!session) return null;
+            return session.toJSON();
+        }
+        return this.#sessions.get(sessionId) ?? null;
     }
 
     /**
