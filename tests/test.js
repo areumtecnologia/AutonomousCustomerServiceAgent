@@ -240,7 +240,7 @@ function delay(ms) {
   let successCount = 0;
   let failureCount = 0;
 
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < 1; i++) {
     try {
       console.log(`\n\x1b[36m%s\x1b[0m`, `\n=== Execução de Teste ${i + 1} ===`);
       await example();

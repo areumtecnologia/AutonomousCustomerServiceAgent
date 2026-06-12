@@ -133,7 +133,7 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
         session.scheduleTTL(this.#sessionTTL);
         this.#sessions.set(id, session);
         this.emit(AgentEvents.SESSION_CREATED, { session: session.toJSON() });
-        return session.toJSON();
+        return session;
     }
 
     /**
