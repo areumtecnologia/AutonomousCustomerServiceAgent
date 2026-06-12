@@ -303,15 +303,40 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
      * Processa uma mensagem do user dentro de uma sessão existente.
      * Gerencia o histórico completo (incluindo turns intermediários de tool calls).
      *
-     * @param {string} message    Texto da mensagem do user
-     * @param {string} sessionId  ID retornado por createSession()
+     * @param {string} sessionId  ID da sessão
+     * @param {string} text       Texto da mensagem do user
+     * @param {object} [attachment]
+     * @param {string} [attachment.base64] Dados em base64 da mídia (opcional)
+     * @param {string} [attachment.mimetype] Tipo MIME da mídia (opcional)
      * @param {object} [options]
      * @param {AbortSignal} [options.signal] Sinal opcional para cancelamento/aborto
      * @returns {Promise<object>} AgentResponse estruturada
      */
-    async processMessage(message, sessionId, { signal } = {}) {
+    async processMessage(sessionId, text, attachment = {}, options = {}) {
+        const { signal } = options || {};
+        const base64 = attachment?.base64;
+        const mimeType = attachment?.mimetype || attachment?.mimeType;
+
+        let normalizedMessage = text;
+        if (base64) {
+            const finalMimeType = mimeType || 'image/jpeg';
+            normalizedMessage = {
+                parts: [
+                    {
+                        inlineData: {
+                            data: base64,
+                            mimeType: finalMimeType
+                        }
+                    },
+                    {
+                        text: text
+                    }
+                ]
+            };
+        }
+
         if (this.#debounceMs <= 0) {
-            return await this.#executeProcessMessage(message, sessionId, signal);
+            return await this.#executeProcessMessage(normalizedMessage, sessionId, signal);
         }
 
         let sessionBuffer = this.#sessionBuffers.get(sessionId);
@@ -325,7 +350,7 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
             this.#sessionBuffers.set(sessionId, sessionBuffer);
         }
 
-        sessionBuffer.messages.push(message);
+        sessionBuffer.messages.push(normalizedMessage);
 
         // 1. Se havia um timer de debounce ativo, cancela
         if (sessionBuffer.timer) {
@@ -352,7 +377,7 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
             sessionBuffer.timer = setTimeout(async () => {
                 sessionBuffer.timer = null;
 
-                const concatenatedMessage = sessionBuffer.messages.join('\n');
+                const concatenatedMessage = this.#concatenateMessages(sessionBuffer.messages);
                 sessionBuffer.messages = [];
 
                 const controller = new AbortController();
@@ -742,6 +767,28 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
+    #concatenateMessages(messages) {
+        const flatParts = [];
+        for (const msg of messages) {
+            if (typeof msg === 'object' && msg !== null && Array.isArray(msg.parts)) {
+                flatParts.push(...msg.parts.map(p => ({ ...p })));
+            } else {
+                flatParts.push({ text: String(msg) });
+            }
+        }
+
+        const optimizedParts = [];
+        for (const part of flatParts) {
+            const lastPart = optimizedParts[optimizedParts.length - 1];
+            if (part.text && lastPart && lastPart.text) {
+                lastPart.text += '\n' + part.text;
+            } else {
+                optimizedParts.push(part);
+            }
+        }
+        return { parts: optimizedParts };
+    }
+
     #emitSemanticEvents(parsed, session) {
         // Eventos semânticos baseados na resposta do modelo - Atualmente sem uso, mas podem ser enriquecidos com base nas necessidades de negócio (ex: classificação de users, detecção de intenções, etc)
     }
@@ -753,15 +800,34 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
     #buildUserTurn(session, message) {
         const { user } = session;
 
+        const isStructured = typeof message === 'object' && message !== null && Array.isArray(message.parts);
+        const parts = isStructured 
+            ? message.parts.map(p => ({ ...p }))
+            : [{ text: message }];
+
         if (session.history.length > 0) {
             return {
                 role: 'user',
-                parts: [
-                    { text: message }
-                ]
+                parts
             };
         }
 
+        if (isStructured) {
+            const userContextText = `User: ${user.name}\nPhone: ${user.phone}\nEmail: ${user.email}\n`;
+            const textPartIndex = parts.findIndex(p => p.text);
+            if (textPartIndex !== -1) {
+                parts[textPartIndex] = {
+                    ...parts[textPartIndex],
+                    text: userContextText + parts[textPartIndex].text
+                };
+            } else {
+                parts.unshift({ text: userContextText });
+            }
+            return {
+                role: 'user',
+                parts
+            };
+        }
 
         return {
             role: 'user',

@@ -125,8 +125,47 @@ class AnthropicProvider extends BaseProvider {
      * @returns {object[]}
      */
     #translateUserTurn(turn) {
-        const text = turn.parts.filter(p => p.text).map(p => p.text).join('\n');
-        return [{ role: 'user', content: text }];
+        const hasInlineData = turn.parts.some(p => p.inlineData);
+
+        if (!hasInlineData) {
+            const text = turn.parts.filter(p => p.text).map(p => p.text).join('\n');
+            return [{ role: 'user', content: text }];
+        }
+
+        const content = [];
+        for (const part of turn.parts) {
+            if (part.text) {
+                content.push({
+                    type: 'text',
+                    text: part.text
+                });
+            } else if (part.inlineData) {
+                const { mimeType, data } = part.inlineData;
+                const isPDF = mimeType === 'application/pdf';
+                const type = isPDF ? 'document' : 'image';
+
+                if (isPDF) {
+                    content.push({
+                        type: 'document',
+                        source: {
+                            type: 'base64',
+                            media_type: mimeType,
+                            data
+                        }
+                    });
+                } else {
+                    content.push({
+                        type: 'image',
+                        source: {
+                            type: 'base64',
+                            media_type: mimeType,
+                            data
+                        }
+                    });
+                }
+            }
+        }
+        return [{ role: 'user', content }];
     }
 
     /**

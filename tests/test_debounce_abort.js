@@ -53,11 +53,11 @@ async function runSimulation() {
     console.log('[Teste] Disparando 3 chamadas diretas a processMessage com intervalos de 100ms...');
     
     // Dispara 3 mensagens em sequência rápida diretamente no agente
-    const p1 = customerAgent.processMessage('Olá!', sessionId);
+    const p1 = customerAgent.processMessage(sessionId, 'Olá!');
     await delay(100);
-    const p2 = customerAgent.processMessage('Tudo bem?', sessionId);
+    const p2 = customerAgent.processMessage(sessionId, 'Tudo bem?');
     await delay(100);
-    const p3 = customerAgent.processMessage('Queria saber se vocês atendem aos finais de semana.', sessionId);
+    const p3 = customerAgent.processMessage(sessionId, 'Queria saber se vocês atendem aos finais de semana.');
 
     // Aguarda a resolução de todas. As duas primeiras devem ser unificadas na terceira por debounce.
     const [r1, r2, r3] = await Promise.all([p1, p2, p3]);
@@ -79,7 +79,7 @@ async function runSimulation() {
     console.log('[Teste] Enviando uma mensagem direta para processMessage...');
 
     // Dispara uma mensagem diretamente e deixa o debounce expirar para iniciar o processamento no LLM
-    const activePromise = customerAgent.processMessage('Vocês têm cupom de desconto?', sessionId);
+    const activePromise = customerAgent.processMessage(sessionId, 'Vocês têm cupom de desconto?');
     
     // Espera expirar o debounce (1.0s) + 400ms adicionais para garantir que a chamada ao LLM iniciou
     console.log('[Teste] Aguardando o debounce expirar (1000ms) + tempo de inicialização da chamada ao LLM (400ms)...');
@@ -87,7 +87,7 @@ async function runSimulation() {
 
     // Agora, envia uma segunda mensagem enquanto o LLM está gerando a resposta
     console.log('[Teste] Enviando segunda mensagem direta com a primeira ainda ativa no LLM...');
-    const incomingPromise = customerAgent.processMessage('Ah, e esqueci de perguntar: qual o horário de atendimento?', sessionId);
+    const incomingPromise = customerAgent.processMessage(sessionId, 'Ah, e esqueci de perguntar: qual o horário de atendimento?');
 
     // Aguarda ambas resoluções
     const [resPrev, resNew] = await Promise.all([activePromise, incomingPromise]);

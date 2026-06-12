@@ -116,8 +116,31 @@ class OpenAIProvider extends BaseProvider {
      * @returns {object[]}
      */
     #translateUserTurn(turn) {
-        const text = turn.parts.filter(p => p.text).map(p => p.text).join('\n');
-        return [{ role: 'user', content: text }];
+        const hasInlineData = turn.parts.some(p => p.inlineData);
+
+        if (!hasInlineData) {
+            const text = turn.parts.filter(p => p.text).map(p => p.text).join('\n');
+            return [{ role: 'user', content: text }];
+        }
+
+        const content = [];
+        for (const part of turn.parts) {
+            if (part.text) {
+                content.push({
+                    type: 'text',
+                    text: part.text
+                });
+            } else if (part.inlineData) {
+                const { mimeType, data } = part.inlineData;
+                content.push({
+                    type: 'image_url',
+                    image_url: {
+                        url: `data:${mimeType};base64,${data}`
+                    }
+                });
+            }
+        }
+        return [{ role: 'user', content }];
     }
 
     /**
