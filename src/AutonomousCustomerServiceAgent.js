@@ -37,6 +37,8 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
     #unavailabilityMessage;
     #syncBusy = false;
     #syncBusyBySessionId = null;
+    #debounceMs = 0;
+    #sessionBuffers = new Map();
 
     /**
      * @param {object} options
@@ -78,6 +80,7 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
         topP = 0.95,
         thinkingLevel = "HIGH",
         maxOutputTokens = 32_768,
+        debounceMs = 0,
     } = {}) {
         super();
         if (!agent) throw new TypeError('[AgentCSA] agent config is required.');
@@ -114,6 +117,7 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
         this.#retryScheduleWindowMs = retryScheduleWindowMs;
         this.#unavailabilityMessage = unavailabilityMessage;
         this.#syncBusy = false;
+        this.#debounceMs = debounceMs;
     }
 
     // ── Session Management ────────────────────────────────────────────────────
@@ -153,6 +157,19 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
             clearTimeout(session.retryState.timerId);
             session.retryState = null;
         }
+
+        // Limpa o buffer de debounce se houver
+        const buffer = this.#sessionBuffers.get(sessionId);
+        if (buffer) {
+            if (buffer.timer) {
+                clearTimeout(buffer.timer);
+            }
+            if (buffer.controller) {
+                buffer.controller.abort();
+            }
+            this.#sessionBuffers.delete(sessionId);
+        }
+
         const sessionData = session.toJSON(); // Copia o estado antes de deletar a sessão
         this.#sessions.delete(sessionId);
 
@@ -288,9 +305,100 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
      *
      * @param {string} message    Texto da mensagem do user
      * @param {string} sessionId  ID retornado por createSession()
+     * @param {object} [options]
+     * @param {AbortSignal} [options.signal] Sinal opcional para cancelamento/aborto
      * @returns {Promise<object>} AgentResponse estruturada
      */
-    async processMessage(message, sessionId) {
+    async processMessage(message, sessionId, { signal } = {}) {
+        if (this.#debounceMs <= 0) {
+            return await this.#executeProcessMessage(message, sessionId, signal);
+        }
+
+        let sessionBuffer = this.#sessionBuffers.get(sessionId);
+        if (!sessionBuffer) {
+            sessionBuffer = {
+                messages: [],
+                timer: null,
+                controller: null,
+                pendingResolvers: []
+            };
+            this.#sessionBuffers.set(sessionId, sessionBuffer);
+        }
+
+        sessionBuffer.messages.push(message);
+
+        // 1. Se havia um timer de debounce ativo, cancela
+        if (sessionBuffer.timer) {
+            clearTimeout(sessionBuffer.timer);
+            sessionBuffer.timer = null;
+        }
+
+        // 2. Se a requisição já havia sido disparada e o LLM está rodando, aborta a ativa
+        if (sessionBuffer.controller) {
+            sessionBuffer.controller.abort();
+            sessionBuffer.controller = null;
+
+            // Resolve as promessas abortadas com status aborted
+            const activeResolvers = sessionBuffer.pendingResolvers;
+            sessionBuffer.pendingResolvers = [];
+            for (const item of activeResolvers) {
+                item.resolve({ aborted: true });
+            }
+        }
+
+        return new Promise((resolve, reject) => {
+            sessionBuffer.pendingResolvers.push({ resolve, reject });
+
+            sessionBuffer.timer = setTimeout(async () => {
+                sessionBuffer.timer = null;
+
+                const concatenatedMessage = sessionBuffer.messages.join('\n');
+                sessionBuffer.messages = [];
+
+                const controller = new AbortController();
+                sessionBuffer.controller = controller;
+
+                let abortListener;
+                if (signal) {
+                    if (signal.aborted) {
+                        controller.abort();
+                    } else {
+                        abortListener = () => controller.abort();
+                        signal.addEventListener('abort', abortListener, { once: true });
+                    }
+                }
+
+                const currentResolvers = sessionBuffer.pendingResolvers;
+                sessionBuffer.pendingResolvers = [];
+
+                try {
+                    const response = await this.#executeProcessMessage(concatenatedMessage, sessionId, controller.signal);
+                    for (const item of currentResolvers) {
+                        item.resolve(response);
+                    }
+                } catch (error) {
+                    if (error.name === 'AbortError' || error.message?.includes('aborted')) {
+                        for (const item of currentResolvers) {
+                            item.resolve({ aborted: true });
+                        }
+                    } else {
+                        for (const item of currentResolvers) {
+                            item.reject(error);
+                        }
+                    }
+                } finally {
+                    if (signal && abortListener) {
+                        signal.removeEventListener('abort', abortListener);
+                    }
+                    if (sessionBuffer.controller === controller) {
+                        sessionBuffer.controller = null;
+                    }
+                }
+            }, this.#debounceMs);
+        });
+    }
+
+    async #executeProcessMessage(message, sessionId, signal) {
         const session = this.#sessions.get(sessionId);
         if (!session) throw new Error(`[AgentCSA] Session "${sessionId}" not found.`);
 
@@ -299,6 +407,10 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
 
         if (this.#failureHandlingMode === 'sync' && this.#syncBusy && this.#syncBusyBySessionId !== session.id) {
             throw new Error('[AgentCSA] Sync mode is active: another task is in progress. Please try again later.');
+        }
+
+        if (signal?.aborted) {
+            throw new DOMException('The user aborted a request.', 'AbortError');
         }
 
         // Renova TTL a cada atividade
@@ -314,11 +426,20 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
                 this.#getConfig(),
                 0,
                 session,
+                signal
             );
 
             if (extraTurns.length) session.appendHistory(...extraTurns);
             return result;
         } catch (err) {
+            // Se o erro foi um aborto manual/externo do usuário, removemos o turno de usuário adicionado nesta chamada
+            if ((err.name === 'AbortError' || err.message?.includes('aborted')) && signal?.aborted) {
+                const history = session.getHistory();
+                if (history.length > 0 && history[history.length - 1] === userTurn) {
+                    history.pop();
+                    session.setHistory(history);
+                }
+            }
             return await this.#handleProcessingFailure(err, session, [...session.history]);
         }
     }
@@ -333,7 +454,7 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
      *
      * @returns {Promise<{ result: object, extraTurns: object[] }>}
      */
-    async #agenticLoop(contents, config, depth, session) {
+    async #agenticLoop(contents, config, depth, session, signal) {
         if (depth >= this.#maxAgenticLoopTurns) {
             const err = new Error(`[AgentCSA] Agentic loop exceeded ${this.#maxAgenticLoopTurns} turns.`);
             this.emit(AgentEvents.ERROR, { error: err, session: session.toJSON() });
@@ -343,7 +464,7 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
         this.emit(AgentEvents.TURN_START, { depth, session: session.toJSON() });
 
         // ── Chama o modelo com retry + timeout de turno ─────────────────────────
-        const rawResponse = await this.#callModelWithRetry(contents, config, session, depth);
+        const rawResponse = await this.#callModelWithRetry(contents, config, session, depth, signal);
         this.emit(AgentEvents.RAW_RESPONSE, { rawResponse, session: session.toJSON() });
 
         const candidate = rawResponse.candidates?.[0];
@@ -353,7 +474,7 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
         // ── Branch A: o modelo quer chamar tools ────────────────────────────────
         if (functionCallParts.length > 0) {
             const toolResultParts = await Promise.all(
-                functionCallParts.map(p => this.#executeTool(p.functionCall, session)),
+                functionCallParts.map(p => this.#executeTool(p.functionCall, session, signal)),
             );
 
             const modelTurn = { role: 'model', parts };
@@ -363,7 +484,7 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
 
             this.emit(AgentEvents.TURN_END, { depth, type: 'tool_call', session: session.toJSON() });
 
-            const nested = await this.#agenticLoop(updatedContents, config, depth + 1, session);
+            const nested = await this.#agenticLoop(updatedContents, config, depth + 1, session, signal);
 
             return {
                 result: nested.result,
@@ -404,10 +525,10 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
 
     // ── Model call: retry + timeout ───────────────────────────────────────────
 
-    async #callModelWithRetry(contents, config, session, depth) {
+    async #callModelWithRetry(contents, config, session, depth, signal) {
         return withRetry(
             async () => {
-                const rawResponse = await this.#callModelWithTimeout(contents, config);
+                const rawResponse = await this.#callModelWithTimeout(contents, config, signal);
 
                 // ── Validação da resposta para detectar erros transientes ─────
                 const candidate = rawResponse.candidates?.[0];
@@ -431,6 +552,11 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
                 ...this.#retryOptions,
 
                 retryIf: (err) => {
+                    // Se o sinal de aborto externo foi ativado pelo usuário, não retentar
+                    if (signal?.aborted) {
+                        return false;
+                    }
+
                     // Timeout de turno do agente — retentável
                     if (err?.message?.includes('Turn exceeded')) {
                         return true;
@@ -488,12 +614,24 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
         );
     }
 
-    async #callModelWithTimeout(contents, config) {
+    async #callModelWithTimeout(contents, config, signal) {
         const controller = new AbortController();
         const timer = setTimeout(
             () => controller.abort(new Error(`[AgentCSA] Turn exceeded ${this.#turnTimeoutMs}ms.`)),
             this.#turnTimeoutMs,
         );
+
+        let abortListener;
+        if (signal) {
+            if (signal.aborted) {
+                clearTimeout(timer);
+                throw new DOMException('The user aborted a request.', 'AbortError');
+            }
+            abortListener = () => {
+                controller.abort(new DOMException('The user aborted a request.', 'AbortError'));
+            };
+            signal.addEventListener('abort', abortListener, { once: true });
+        }
 
         try {
             const res = await Promise.race([
@@ -518,6 +656,9 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
             return res;
         } finally {
             clearTimeout(timer);
+            if (signal && abortListener) {
+                signal.removeEventListener('abort', abortListener);
+            }
         }
     }
 
@@ -527,7 +668,7 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
 
     // ── Tool execution com timeout individual ─────────────────────────────────
 
-    async #executeTool({ name, args }, session) {
+    async #executeTool({ name, args }, session, signal) {
         this.emit(AgentEvents.TOOL_CALL, { name, args, session: session.toJSON() });
 
         if (name === 'report_vulnerability_attempt') {
@@ -554,6 +695,18 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
             this.#toolTimeoutMs,
         );
 
+        let abortListener;
+        if (signal) {
+            if (signal.aborted) {
+                clearTimeout(timer);
+                throw new DOMException('The user aborted a request.', 'AbortError');
+            }
+            abortListener = () => {
+                controller.abort(new DOMException('The user aborted a request.', 'AbortError'));
+            };
+            signal.addEventListener('abort', abortListener, { once: true });
+        }
+
         let resultText;
         try {
             const tool = this.#toolRegistry.get(name);
@@ -572,6 +725,9 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
             this.emit(AgentEvents.ERROR, { error: err, source: 'tool', name, session: session.toJSON() });
         } finally {
             clearTimeout(timer);
+            if (signal && abortListener) {
+                signal.removeEventListener('abort', abortListener);
+            }
         }
 
         this.emit(AgentEvents.TOOL_RESULT, { name, args, result: resultText, session: session.toJSON() });
@@ -631,6 +787,19 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
             clearTimeout(session.retryState.timerId);
             session.retryState = null;
         }
+
+        // Limpa o buffer de debounce se houver
+        const buffer = this.#sessionBuffers.get(sessionId);
+        if (buffer) {
+            if (buffer.timer) {
+                clearTimeout(buffer.timer);
+            }
+            if (buffer.controller) {
+                buffer.controller.abort();
+            }
+            this.#sessionBuffers.delete(sessionId);
+        }
+
         this.#sessions.delete(sessionId);
         this.emit(AgentEvents.SESSION_EXPIRED, { session: session.toJSON() });
     }
@@ -642,6 +811,9 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
         const msg = String(err.message || '').toLowerCase();
         if (msg.includes('session') && msg.includes('not found')) return false;
         if (msg.includes('session terminated') || msg.includes('terminated')) return false;
+        // Se for um erro de aborto iniciado pelo usuário (AbortError manual), não deve ser retentável
+        if (err.name === 'AbortError' && !msg.includes('turn exceeded')) return false;
+        if (msg.includes('aborted') && !msg.includes('turn exceeded')) return false;
         return true;
     }
 
