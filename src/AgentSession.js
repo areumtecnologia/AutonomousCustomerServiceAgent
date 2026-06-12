@@ -23,6 +23,7 @@ class AgentSession extends EventEmitter {
         this.id = id || uuid();
         this.user = Object.freeze({ ...user });
         this.#onExpire = onExpire;
+        this.history = [];
     }
 
     touch() { this.lastActivity = new Date(); }
