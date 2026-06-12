@@ -19,6 +19,7 @@ const { AgentManager } = require('./AgentManager');
 const { AgentConfig } = require('./AgentConfig');
 const { AutonomousCustomerServiceAgent } = require('./AutonomousCustomerServiceAgent');
 const { Type, ThinkingLevel } = require('./types');
+const { AgentSession, AgentSessionEvents } = require('./AgentSession');
 const {
     BaseProvider,
     GoogleProvider,
@@ -39,4 +40,6 @@ module.exports = {
     OpenAIProvider,
     OllamaProvider,
     AnthropicProvider,
+    AgentSession,
+    AgentSessionEvents,
 };
