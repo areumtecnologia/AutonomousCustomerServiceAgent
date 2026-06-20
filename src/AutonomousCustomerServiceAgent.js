@@ -132,7 +132,7 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
                     if (!type) {
                         throw new TypeError('[AgentCSA] Provider configuration object must specify "type" or "provider".');
                     }
-                    
+
                     const provModels = [];
                     if (rawProv.model) {
                         if (Array.isArray(rawProv.model)) {
@@ -198,15 +198,24 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
      * @param {object} user  { name, phone, origin? }
      * @returns {string} sessionId
      */
-    createSession(id, user) {
+    createSession(id, user, options = {}) {
         if (!id) throw new TypeError('[AgentCSA] Session ID is required.');
-        const existing = this.#sessions.get(id);
+        const sid = String(id);
+        const existing = this.#sessions.get(sid);
         if (existing) {
             throw new Error(`[AgentCSA] Session with ID "${id}" already exists for user "${existing.user.name}".`);
         }
-        const session = new AgentSession(id, user, (expId) => this.#onSessionExpired(expId));
+        const session = new AgentSession(
+            sid,
+            user,
+            (expId) => this.#onSessionExpired(expId),
+            (idleId) => this.#onSessionIdle(idleId)
+        );
+        session.idleTimeoutMs = (options.idleTimeout === null || options.idleTimeout === undefined || options.idleTimeout <= 0) ? 0 : options.idleTimeout;
+        session.idleRepeat = !!options.idleRepeat;
         session.scheduleTTL(this.#sessionTTL);
-        this.#sessions.set(id, session);
+        session.scheduleIdle(session.idleTimeoutMs);
+        this.#sessions.set(sid, session);
         this.emit(AgentEvents.SESSION_CREATED, { session: session.toJSON() });
         return session;
     }
@@ -221,9 +230,11 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
      * @returns {boolean}
      */
     clearSession(sessionId, { reason = 'manual', data = {}, eventTrigger = true } = {}) {
-        const session = this.#sessions.get(sessionId);
+        const sid = String(sessionId);
+        const session = this.#sessions.get(sid);
         if (!session) return false;
         session.cancelTTL();
+        session.cancelIdle();
         if (session.retryState?.timerId) {
             clearTimeout(session.retryState.timerId);
             session.retryState = null;
@@ -257,12 +268,13 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
      * @returns {object|null}
      */
     getSession(sessionId, isClone = false) {
+        const sid = String(sessionId);
         if (isClone) {
-            const session = this.#sessions.get(sessionId);
+            const session = this.#sessions.get(sid);
             if (!session) return null;
             return session.toJSON();
         }
-        return this.#sessions.get(sessionId) ?? null;
+        return this.#sessions.get(sid) ?? null;
     }
 
     /**
@@ -384,6 +396,7 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
      * @returns {Promise<object>} AgentResponse estruturada
      */
     async processMessage(sessionId, text, attachment = {}, options = {}) {
+        const sid = String(sessionId);
         const { signal } = options || {};
         const base64 = attachment?.base64;
         const mimeType = attachment?.mimetype || attachment?.mimeType;
@@ -407,10 +420,10 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
         }
 
         if (this.#debounceMs <= 0) {
-            return await this.#executeProcessMessage(normalizedMessage, sessionId, signal);
+            return await this.#executeProcessMessage(normalizedMessage, sid, signal);
         }
 
-        let sessionBuffer = this.#sessionBuffers.get(sessionId);
+        let sessionBuffer = this.#sessionBuffers.get(sid);
         if (!sessionBuffer) {
             sessionBuffer = {
                 messages: [],
@@ -418,7 +431,7 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
                 controller: null,
                 pendingResolvers: []
             };
-            this.#sessionBuffers.set(sessionId, sessionBuffer);
+            this.#sessionBuffers.set(sid, sessionBuffer);
         }
 
         sessionBuffer.messages.push(normalizedMessage);
@@ -468,7 +481,7 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
                 sessionBuffer.pendingResolvers = [];
 
                 try {
-                    const response = await this.#executeProcessMessage(concatenatedMessage, sessionId, controller.signal);
+                    const response = await this.#executeProcessMessage(concatenatedMessage, sid, controller.signal);
                     for (const item of currentResolvers) {
                         item.resolve(response);
                     }
@@ -494,9 +507,10 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
         });
     }
 
-    async #executeProcessMessage(message, sessionId, signal) {
-        const session = this.#sessions.get(sessionId);
-        if (!session) throw new Error(`[AgentCSA] Session "${sessionId}" not found.`);
+    async #executeProcessMessage(message, sessionId, signal, isSystemTrigger = false) {
+        const sid = String(sessionId);
+        const session = this.#sessions.get(sid);
+        if (!session) throw new Error(`[AgentCSA] Session "${sid}" not found.`);
 
         // Sessão encerrada por violação de segurança
         if (session.terminated) return this.#terminatedResponse(session);
@@ -512,6 +526,12 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
         // Renova TTL a cada atividade
         session.touch();
         session.scheduleTTL(this.#sessionTTL);
+
+        if (!isSystemTrigger) {
+            session.scheduleIdle(session.idleTimeoutMs);
+        } else {
+            session.cancelIdle();
+        }
 
         const userTurn = this.#buildUserTurn(session, message);
         session.appendHistory(userTurn);
@@ -900,7 +920,7 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
         const { user } = session;
 
         const isStructured = typeof message === 'object' && message !== null && Array.isArray(message.parts);
-        const parts = isStructured 
+        const parts = isStructured
             ? message.parts.map(p => ({ ...p }))
             : [{ text: message }];
 
@@ -948,7 +968,11 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
 
     #onSessionExpired(sessionId) {
         const session = this.#sessions.get(sessionId);
-        if (session?.retryState?.timerId) {
+        if (!session) return;
+
+        session.cancelIdle();
+
+        if (session.retryState?.timerId) {
             clearTimeout(session.retryState.timerId);
             session.retryState = null;
         }
@@ -965,8 +989,30 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
             this.#sessionBuffers.delete(sessionId);
         }
 
+        const sessionData = session.toJSON();
         this.#sessions.delete(sessionId);
-        this.emit(AgentEvents.SESSION_EXPIRED, { session: session.toJSON() });
+        this.emit(AgentEvents.SESSION_EXPIRED, { session: sessionData });
+    }
+
+    async #onSessionIdle(sessionId) {
+        const session = this.#sessions.get(sessionId);
+        if (!session || session.terminated) return;
+
+        session.cancelIdle();
+
+        this.emit(AgentEvents.SESSION_IDLE_TIMEOUT, { session: session.toJSON() });
+
+        const idlePrompt = `[System: The user has been inactive for some time. Send a polite and short follow-up message to check if they are still there or if they need further assistance regarding their last request, or professionally close the conversation if appropriate. Do not reference this system tag in your response.]`;
+
+        try {
+            await this.#executeProcessMessage(idlePrompt, sessionId, null, true);
+        } catch (error) {
+            this.emit(AgentEvents.ERROR, { error, source: 'idle_timeout', session: session.toJSON() });
+        } finally {
+            if (session.idleRepeat && session.idleTimeoutMs > 0 && !session.terminated && this.#sessions.has(sessionId)) {
+                session.scheduleIdle(session.idleTimeoutMs);
+            }
+        }
     }
 
     // ── Helper: retry and unavailability handling ───────────────────────────

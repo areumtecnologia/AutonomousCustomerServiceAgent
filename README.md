@@ -1,6 +1,6 @@
 # Autonomous Customer Service Agent
 
-> **v2.3.0** — Agente autônomo de atendimento ao cliente baseado em IA, com suporte a múltiplos provedores redundantes (Google Gemini, OpenAI, Claude, Ollama), failover automático em caso de falhas 5xx, suporte a mídias (imagens, áudio, vídeo), gerenciamento concorrente transparente (debounce + abort) e sessões integradas.
+> **v2.3.1** — Agente autônomo de atendimento ao cliente baseado em IA, com suporte a múltiplos provedores redundantes (Google Gemini, OpenAI, Claude, Ollama), failover automático em caso de falhas 5xx, suporte a mídias (imagens, áudio, vídeo), gerenciamento concorrente transparente (debounce + abort) e sessões integradas.
 
 ---
 
@@ -258,9 +258,15 @@ Constrói a configuração do agente. **Obrigatório** — o construtor de `Auto
 
 ### Métodos de Sessão
 
-#### `agent.createSession(id, user)` → `SessionSnapshot`
+#### `agent.createSession(id, user, options?)` → `SessionSnapshot`
 
 Cria uma nova sessão de atendimento. O `id` deve ser único — uma exceção é lançada caso já exista uma sessão com o mesmo ID.
+
+- **`id`**: `string` - ID único da sessão.
+- **`user`**: `object` - Informações do usuário (`name`, `phone`, `email`, etc.).
+- **`options`** (opcional): `object` - Opções extras de configuração da sessão:
+  - **`idleTimeout`** (opcional): `number` - Tempo de inatividade em milissegundos para disparar um evento e resposta automática de acompanhamento (`SESSION_IDLE_TIMEOUT`). Se for `null`, `undefined` ou `0`, o recurso permanece desativado (comportamento padrão).
+  - **`idleRepeat`** (opcional): `boolean` - Se definido como `true`, repete o evento de inatividade periodicamente (a cada período de `idleTimeout`) enquanto o usuário não responder.
 
 ```javascript
 const session = agent.createSession('session-abc', {
@@ -268,6 +274,9 @@ const session = agent.createSession('session-abc', {
   phone: '5511999999999',
   email: 'maria@exemplo.com',
   origin: { type: 'instagram', id: '999', description: 'Lead via DM.' },
+}, {
+  idleTimeout: 300000, // 5 minutos de inatividade
+  idleRepeat: true     // Repetir a cada 5 minutos até obter resposta
 });
 ```
 

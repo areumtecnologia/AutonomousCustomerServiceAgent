@@ -14,15 +14,20 @@ class AgentSession extends EventEmitter {
   /** @type {Date}     */ createdAt = new Date();
   /** @type {Date}     */ lastActivity = new Date();
   /** @type {object|null} */ retryState = null;
+  /** @type {number}   */ idleTimeoutMs = 0;
+  /** @type {boolean}  */ idleRepeat = false;
 
     #ttlTimer = null;
     #onExpire;
+    #idleTimer = null;
+    #onIdle;
 
-    constructor(id, user, onExpire) {
+    constructor(id, user, onExpire, onIdle) {
         super();
         this.id = id || uuid();
         this.user = Object.freeze({ ...user });
         this.#onExpire = onExpire;
+        this.#onIdle = onIdle;
         this.history = [];
     }
 
@@ -36,6 +41,17 @@ class AgentSession extends EventEmitter {
 
     cancelTTL() {
         if (this.#ttlTimer) { clearTimeout(this.#ttlTimer); this.#ttlTimer = null; }
+    }
+
+    scheduleIdle(ms) {
+        this.cancelIdle();
+        if (!ms || ms <= 0) return;
+        this.#idleTimer = setTimeout(() => this.#onIdle?.(this.id), ms);
+        this.#idleTimer.unref?.(); // não bloqueia shutdown do processo
+    }
+
+    cancelIdle() {
+        if (this.#idleTimer) { clearTimeout(this.#idleTimer); this.#idleTimer = null; }
     }
 
     appendHistory(...turns) {
@@ -65,7 +81,8 @@ class AgentSession extends EventEmitter {
             lastActivity: this.lastActivity,
             turns: this.history.length,
             history: this.history,
-
+            idleTimeoutMs: this.idleTimeoutMs,
+            idleRepeat: this.idleRepeat,
         };
     }
 }
