@@ -1,6 +1,6 @@
-# Autonomous Customer Service Agent
+# Agentic Core
 
-> **v2.3.1** — Agente autônomo de atendimento ao cliente baseado em IA, com suporte a múltiplos provedores redundantes (Google Gemini, OpenAI, Claude, Ollama), failover automático em caso de falhas 5xx, suporte a mídias (imagens, áudio, vídeo), gerenciamento concorrente transparente (debounce + abort) e sessões integradas.
+> **v2.4.0** — Framework profissional para orquestração de Agentes Autônomos em Node.js com suporte a múltiplos provedores redundantes (Google Gemini, OpenAI, Claude, Ollama, Nvidia), suporte nativo ao protocolo MCP (Model Context Protocol) como Cliente e Servidor, failover automático em caso de falhas 5xx, suporte a mídias (imagens, áudio, vídeo), gerenciamento concorrente transparente (debounce + abort) e sessões integradas.
 
 ---
 
@@ -8,8 +8,9 @@
 
 | Recurso | Descrição |
 |---|---|
-| **Multi-Provider Nativo** | Suporte a **Google Gemini**, **OpenAI GPT**, **Anthropic Claude** e **Ollama** (modelos locais). |
+| **Multi-Provider Nativo** | Suporte a **Google Gemini**, **OpenAI GPT**, **Anthropic Claude**, **Ollama** (modelos locais) e **Nvidia**. |
 | **Redundância e Failover** | Possibilidade de configurar múltiplos modelos/provedores. Transição automática imediata em caso de indisponibilidade (erro 5xx/rate limit/timeout). |
+| **Suporte Nativo a MCP** | Conecte-se a servidores MCP externos (Stdio/SSE) e importe ferramentas dinamicamente no agente, ou exponha o próprio agente como um MCP Server. |
 | **Suporte Multimídia** | Envio de anexos (imagens, áudio, vídeo) em Base64 no processamento de mensagens. |
 | **Concorrência Transparente** | Gerenciamento automático de mensagens consecutivas (`debounceMs`) com cancelamento ativo no LLM. |
 | **Agentic Loop Completo** | Tool calls encadeados com execução recursiva e contextualizada |
@@ -30,14 +31,14 @@
 ### Via npm (GitHub Packages)
 
 ```bash
-npm install github:areumtecnologia/AutonomousCustomerServiceAgent
+npm install github:areumtecnologia/agentic-core
 ```
 
 ### Via clone local
 
 ```bash
-git clone https://github.com/areumtecnologia/AutonomousCustomerServiceAgent.git
-cd AutonomousCustomerServiceAgent
+git clone https://github.com/areumtecnologia/agentic-core.git
+cd agentic-core
 npm install
 ```
 
@@ -73,12 +74,12 @@ ANTHROPIC_API_KEY=sua-chave-anthropic-aqui
 ```javascript
 require('dotenv').config();
 const { 
-  AutonomousCustomerServiceAgent, 
+  AgenticCore, 
   AgentConfig, 
   AgentEvents, 
   Type, 
   GoogleProvider 
-} = require('@areumtecnologia/autonomouscustomerserviceagent');
+} = require('@areumtecnologia/agentic-core');
 
 // 1. Configurar o agente
 const agentConfig = new AgentConfig(
@@ -94,7 +95,7 @@ const agentConfig = new AgentConfig(
 );
 
 // 2. Instanciar o agente usando múltiplos provedores ou modelos redundantes (Failover automático)
-const agent = new AutonomousCustomerServiceAgent({
+const agent = new AgenticCore({
   // Aceita também model como array de strings (ex: ['gemma-4-26b-a4b-it', 'gemma-4-31b-it'])
   // ou providers como array de instâncias/objetos de configuração
   providers: [
@@ -149,9 +150,9 @@ A biblioteca suporta diferentes provedores de IA de forma intercambiável. Basta
 Você pode configurar múltiplos modelos e/ou provedores para failover automático em caso de indisponibilidade (erro 5xx, rate limits ou timeouts).
 
 ```javascript
-const { GoogleProvider, OpenAIProvider, AutonomousCustomerServiceAgent } = require('@areumtecnologia/autonomouscustomerserviceagent');
+const { GoogleProvider, OpenAIProvider, AgenticCore } = require('@areumtecnologia/agentic-core');
 
-const agent = new AutonomousCustomerServiceAgent({
+const agent = new AgenticCore({
   // O campo providers aceita instâncias de BaseProvider ou objetos de configuração
   providers: [
     new GoogleProvider({ apiKey: 'key1', model: 'gemma-4-26b-a4b-it' }),
@@ -162,7 +163,7 @@ const agent = new AutonomousCustomerServiceAgent({
 });
 
 // Se preferir usar o provedor padrão (GoogleProvider) para múltiplos modelos:
-const agentSimplificado = new AutonomousCustomerServiceAgent({
+const agentSimplificado = new AgenticCore({
   apiKey: 'sua-gemini-key',
   model: ['gemma-4-26b-a4b-it', 'gemma-4-31b-it'], // Failover automático entre os modelos caso um falhe
   agent: agentConfig
@@ -171,7 +172,7 @@ const agentSimplificado = new AutonomousCustomerServiceAgent({
 
 ### 1. Google Gemini Provider
 ```javascript
-const { GoogleProvider } = require('@areumtecnologia/autonomouscustomerserviceagent');
+const { GoogleProvider } = require('@areumtecnologia/agentic-core');
 
 const provider = new GoogleProvider({
   apiKey: process.env.GOOGLE_GEMINI_API_KEY,
@@ -181,7 +182,7 @@ const provider = new GoogleProvider({
 
 ### 2. OpenAI Provider
 ```javascript
-const { OpenAIProvider } = require('@areumtecnologia/autonomouscustomerserviceagent');
+const { OpenAIProvider } = require('@areumtecnologia/agentic-core');
 
 const provider = new OpenAIProvider({
   apiKey: process.env.OPENAI_API_KEY,
@@ -191,7 +192,7 @@ const provider = new OpenAIProvider({
 
 ### 3. Anthropic Claude Provider
 ```javascript
-const { AnthropicProvider } = require('@areumtecnologia/autonomouscustomerserviceagent');
+const { AnthropicProvider } = require('@areumtecnologia/agentic-core');
 
 const provider = new AnthropicProvider({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -202,11 +203,22 @@ const provider = new AnthropicProvider({
 ### 4. Ollama Provider (Modelos Locais)
 Perfeito para rodar offline ou em servidores locais compatíveis com a API do OpenAI:
 ```javascript
-const { OllamaProvider } = require('@areumtecnologia/autonomouscustomerserviceagent');
+const { OllamaProvider } = require('@areumtecnologia/agentic-core');
 
 const provider = new OllamaProvider({
   model: 'gemma4',                  // Nome do modelo baixado no Ollama
   baseURL: 'http://localhost:11434/v1' // Opcional, padrão da API local do Ollama
+});
+```
+
+### 5. Nvidia Provider (Nvidia NIM)
+Suporte para modelos executados na API da Nvidia (NIM):
+```javascript
+const { NvidiaProvider } = require('@areumtecnologia/agentic-core');
+
+const provider = new NvidiaProvider({
+  apiKey: process.env.NVIDIA_API_KEY,
+  model: 'minimaxai/minimax-m3' // Modelo de IA hospedado pela Nvidia
 });
 ```
 
@@ -216,12 +228,12 @@ const provider = new OllamaProvider({
 
 ### `new AgentConfig(name, companyName, companyDetails, objective, instructions, reasoningLanguage?)`
 
-Constrói a configuração do agente. **Obrigatório** — o construtor de `AutonomousCustomerServiceAgent` exige uma instância de `AgentConfig`.
+Constrói a configuração do agente. **Obrigatório** — o construtor de `AgenticCore` exige uma instância de `AgentConfig`.
 
 | Parâmetro | Tipo | Padrão | Descrição |
 |---|---|---|---|
 | `name` | `string` | — | Nome do agente |
-| `companyName` | `string` | — | Nome da empresa |
+| `companyName` | `string` | — | Nome do empresa |
 | `companyDetails` | `string` | — | Descrição da empresa |
 | `objective` | `string` | — | Objetivo da missão |
 | `instructions` | `string` | — | Protocolo de execução (instruções detalhadas) |
@@ -229,7 +241,7 @@ Constrói a configuração do agente. **Obrigatório** — o construtor de `Auto
 
 ---
 
-### `new AutonomousCustomerServiceAgent(options)`
+### `new AgenticCore(options)`
 
 | Opção | Tipo | Padrão | Descrição |
 |---|---|---|---|
@@ -432,7 +444,7 @@ Quando `debounceMs` é configurado (ex: `1500`):
 Use `agent.on(AgentEvents.EVENT_NAME, callback)` para monitorar o ciclo de vida completo.
 
 ```javascript
-const { AgentEvents } = require('@areumtecnologia/autonomouscustomerserviceagent');
+const { AgentEvents } = require('@areumtecnologia/agentic-core');
 
 agent
   // ── Sessões ─────────────────────────────────────────────────────────────
@@ -475,6 +487,56 @@ agent
 
 ---
 
+## 🔌 Suporte ao Protocolo MCP (Model Context Protocol)
+
+A biblioteca fornece suporte nativo ao **Model Context Protocol (MCP)**, permitindo que seu agente atue como um **MCP Client** (consumindo recursos e ferramentas externas) ou como um **MCP Server** (expondo as capacidades do agente para outros sistemas de terceiros).
+
+### 1. Atuando como MCP Client (Importando Ferramentas Externas)
+
+O `McpManager` conecta o agente a servidores MCP via transporte **Stdio** e importa todas as ferramentas expostas por eles. Elas são registradas dinamicamente e ficam disponíveis no loop de execução do agente.
+
+```javascript
+const { AgenticCore, AgentConfig, McpManager } = require('@areumtecnologia/agentic-core');
+
+const agent = new AgenticCore({
+  apiKey: process.env.GOOGLE_GEMINI_API_KEY,
+  agent: new AgentConfig('Monnalisa', 'Minha Empresa', '...')
+});
+
+const mcpManager = new McpManager(agent);
+
+// Registra e conecta ao servidor MCP PostgreSQL externo
+await mcpManager.registerServer('db_server', {
+  command: 'node',
+  args: ['path/to/postgresql-mcp-server/index.js'],
+  env: { DATABASE_URL: 'postgresql://localhost:5432/my_database' }
+});
+
+// A ferramenta "query_orders" exposta pelo PostgreSQL MCP Server 
+// agora está registrada no agente como "db_server_query_orders"!
+```
+
+### 2. Atuando como MCP Server (Expondo o Agente)
+
+Você pode expor as ferramentas e o processamento de conversas do próprio agente como um servidor MCP compatível para que ele possa ser plugado no **Claude Desktop**, **Cursor** ou outros clientes compatíveis.
+
+```javascript
+const { AgenticCore, McpServer, AgentConfig } = require('@areumtecnologia/agentic-core');
+
+const agent = new AgenticCore({
+  apiKey: process.env.GOOGLE_GEMINI_API_KEY,
+  agent: new AgentConfig('Monnalisa', 'Minha Empresa', '...')
+});
+
+// Cria e inicia o servidor MCP via Stdio
+const mcpServer = new McpServer(agent);
+mcpServer.start();
+
+// O servidor expõe a ferramenta "ask_agent" via stdin/stdout (JSON-RPC 2.0)
+```
+
+---
+
 ## 🔄 Modos de Tratamento de Falhas
 
 ### `failureHandlingMode: 'sync'` (padrão)
@@ -492,12 +554,12 @@ O agente responde imediatamente com a `unavailabilityMessage` e agenda retentati
 Gerencie múltiplos agentes em um único processo:
 
 ```javascript
-const { AgentManager, AutonomousCustomerServiceAgent, AgentConfig } = require('@areumtecnologia/autonomouscustomerserviceagent');
+const { AgentManager, AgenticCore, AgentConfig } = require('@areumtecnologia/agentic-core');
 
 const manager = new AgentManager();
 
-manager.add('vendas', new AutonomousCustomerServiceAgent({ provider: providerVendas, agent: configVendas }));
-manager.add('suporte', new AutonomousCustomerServiceAgent({ provider: providerSuporte, agent: configSuporte }));
+manager.add('vendas', new AgenticCore({ provider: providerVendas, agent: configVendas }));
+manager.add('suporte', new AgenticCore({ provider: providerSuporte, agent: configSuporte }));
 
 const agenteVendas = manager.get('vendas');
 agenteVendas.createSession('s-001', { name: 'Lead', phone: '...' });
@@ -508,18 +570,24 @@ agenteVendas.createSession('s-001', { name: 'Lead', phone: '...' });
 ## 🏗️ Estrutura do Projeto
 
 ```
-AutonomousCustomerServiceAgent/
+agentic-core/
 ├── src/
 │   ├── index.js                          # Ponto de entrada — exports públicos
-│   ├── AutonomousCustomerServiceAgent.js # Classe principal do agente
+│   ├── AgenticCore.js                    # Classe principal do agente
 │   ├── AgentConfig.js                    # Builder de configuração do agente
 │   ├── AgentSession.js                   # Estado de uma sessão de conversa
 │   ├── AgentEvents.js                    # Constantes de eventos (EventEmitter)
 │   ├── AgentManager.js                   # Gerenciador de múltiplos agentes
-│   ├── providers/                        # Provedores de IA suportados (Google, OpenAI, Anthropic, Ollama)
+│   ├── mcp/                              # Integração nativa do Protocolo MCP
+│   │   ├── McpClient.js                  # Conexão JSON-RPC a servidores MCP
+│   │   ├── McpManager.js                 # Gerenciamento de servidores e injeção de tools
+│   │   └── McpServer.js                  # Exposição do agente como MCP Server
+│   ├── providers/                        # Provedores de IA suportados (Google, OpenAI, Anthropic, Ollama, Nvidia)
 │   └── utils.js                          # withRetry (backoff exponencial + jitter)
 ├── tests/
 │   ├── test.js                           # Testes de integração e exemplos
+│   ├── test_mcp.js                       # Testes de integração do protocolo MCP
+│   ├── mock_mcp_server.js                # Servidor MCP Stdio mock para testes
 │   └── test_debounce_abort.js            # Simulação e validação de concorrência
 ├── logs/                                 # Logs de execução (gerados em runtime)
 ├── .env.example                          # Template de variáveis de ambiente

@@ -4,7 +4,8 @@ const GOOGLE_GEMINI_API_KEY = process.env.GOOGLE_GEMINI_API_KEY;
 const IMAGE_BASE64 = process.env.IMAGE_BASE64;
 const AUDIO_BASE64 = process.env.AUDIO_BASE64;
 const VIDEO_BASE64 = process.env.VIDEO_BASE64;
-const { AutonomousCustomerServiceAgent, Type, AgentEvents, AgentConfig, OllamaProvider } = require('../src') //require('@areumtecnologia/autonomouscustomerserviceagent');
+const NVIDIA_API_KEY = process.env.NVIDIA_API_KEY;
+const { AutonomousCustomerServiceAgent, Type, AgentEvents, AgentConfig, OllamaProvider, NvidiaProvider } = require('../src') //require('@areumtecnologia/autonomouscustomerserviceagent');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Exemplo de uso completo (multi-turno com tool call real)
@@ -19,10 +20,11 @@ const { AutonomousCustomerServiceAgent, Type, AgentEvents, AgentConfig, OllamaPr
 
 async function example() {
   const customerAgent = new AutonomousCustomerServiceAgent({
-    apiKey: GOOGLE_GEMINI_API_KEY,
+    // apiKey: GOOGLE_GEMINI_API_KEY,
     // model: 'gemma-4-31b-it', // 'gemma-4-26b-a4b-it',
-    provider: new OllamaProvider({
-      model: 'LiquidAI/lfm2.5-350m:latest'
+    provider: new NvidiaProvider({
+      apiKey: NVIDIA_API_KEY,
+      model: 'minimaxai/minimax-m3' // Modelo minimaxm3 conforme exemplo
     }),
     // temperature: 0.1,
     agent: new AgentConfig(
@@ -88,6 +90,14 @@ async function example() {
 
   // await customerAgent.processMessage(session.id, "O que é isso?", { base64: IMAGE_BASE64, mimeType: 'image/png' });
   await customerAgent.processMessage(session.id, "Olá, quem é você?", {});
+
+  await new Promise(resolve => setTimeout(resolve, 1000));
+
+  await customerAgent.processMessage(session.id, "Qual o seu nome?", {});
+
+  await new Promise(resolve => setTimeout(resolve, 1000));
+
+  await customerAgent.processMessage(session.id, "Que horas são?", {});
 };
 
 example();

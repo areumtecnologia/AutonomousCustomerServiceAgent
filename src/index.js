@@ -17,19 +17,25 @@
 const { AgentEvents } = require('./AgentEvents');
 const { AgentManager } = require('./AgentManager');
 const { AgentConfig } = require('./AgentConfig');
-const { AutonomousCustomerServiceAgent } = require('./AutonomousCustomerServiceAgent');
+const { AgenticCore } = require('./AgenticCore');
 const { Type, ThinkingLevel } = require('./types');
 const { AgentSession, AgentSessionEvents } = require('./AgentSession');
+const { McpManager } = require('./mcp/McpManager');
+const { McpClient } = require('./mcp/McpClient');
+const { McpServer } = require('./mcp/McpServer');
 const {
     BaseProvider,
     GoogleProvider,
     OpenAIProvider,
     OllamaProvider,
     AnthropicProvider,
+    NvidiaProvider,
 } = require('./providers');
 
 module.exports = {
-    AutonomousCustomerServiceAgent,
+    AgenticCore,
+    /** @deprecated Use AgenticCore instead */
+    AutonomousCustomerServiceAgent: AgenticCore,
     AgentEvents,
     AgentManager,
     AgentConfig,
@@ -40,6 +46,10 @@ module.exports = {
     OpenAIProvider,
     OllamaProvider,
     AnthropicProvider,
+    NvidiaProvider,
     AgentSession,
     AgentSessionEvents,
+    McpManager,
+    McpClient,
+    McpServer,
 };

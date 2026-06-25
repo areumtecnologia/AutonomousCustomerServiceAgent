@@ -5,6 +5,7 @@ const { GoogleProvider } = require('./GoogleProvider');
 const { OpenAIProvider } = require('./OpenAIProvider');
 const { OllamaProvider } = require('./OllamaProvider');
 const { AnthropicProvider } = require('./AnthropicProvider');
+const { NvidiaProvider } = require('./NvidiaProvider');
 
 module.exports = {
     BaseProvider,
@@ -12,4 +13,5 @@ module.exports = {
     OpenAIProvider,
     OllamaProvider,
     AnthropicProvider,
+    NvidiaProvider,
 };

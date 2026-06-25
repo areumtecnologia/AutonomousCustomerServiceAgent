@@ -1,7 +1,7 @@
 {
-  "name": "@areumtecnologia/autonomouscustomerserviceagent",
-  "version": "2.4.0",
-  "description": "Agente autônomo de atendimento ao cliente baseado em IA com Google Gemini API. Suporta múltiplas sessões, ferramentas customizadas e retry com backoff exponencial.",
+  "name": "@areumtecnologia/agentic-core",
+  "version": "3.0.0",
+  "description": "Framework profissional para orquestração de Agentes Autônomos em Node.js com suporte multi-provedor (Gemini, OpenAI, Anthropic, Ollama, Nvidia), failover automático, sessões com TTL, concorrência temporal e integração nativa ao protocolo MCP.",
   "license": "ISC",
   "author": "Áreum Tecnologia",
   "type": "commonjs",
@@ -26,7 +26,7 @@
     "start": "node tests/test.js"
   },
   "dependencies": {
-    "@google/genai": "^2.8.0",
+    "@google/genai": "^2.9.0",
     "uuid": "^14.0.0"
   },
   "devDependencies": {

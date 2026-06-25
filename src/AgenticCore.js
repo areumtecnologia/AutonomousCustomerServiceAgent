@@ -9,10 +9,10 @@ const { Type } = require('./types');
 const { BaseProvider } = require('./providers/BaseProvider');
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AutonomousCustomerServiceAgent
+// AgenticCore
 // ─────────────────────────────────────────────────────────────────────────────
 
-class AutonomousCustomerServiceAgent extends EventEmitter {
+class AgenticCore extends EventEmitter {
     // ── Private fields ──────────────────────────────────────────────────────────
     #providers = [];
     #activeProviderIndex = 0;
@@ -1214,6 +1214,7 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
         const { OpenAIProvider } = require('./providers/OpenAIProvider');
         const { OllamaProvider } = require('./providers/OllamaProvider');
         const { AnthropicProvider } = require('./providers/AnthropicProvider');
+        const { NvidiaProvider } = require('./providers/NvidiaProvider');
 
         const normalizedType = String(type || '').trim().toLowerCase();
         switch (normalizedType) {
@@ -1225,6 +1226,8 @@ class AutonomousCustomerServiceAgent extends EventEmitter {
                 return new OllamaProvider(options);
             case 'anthropic':
                 return new AnthropicProvider(options);
+            case 'nvidia':
+                return new NvidiaProvider(options);
             default:
                 throw new Error(`[AgentCSA] Unknown provider type: "${type}".`);
         }
@@ -1263,4 +1266,4 @@ ${this.#agent.company.name ? `<work_context>
     }
 }
 
-module.exports = { AutonomousCustomerServiceAgent };
+module.exports = { AgenticCore };

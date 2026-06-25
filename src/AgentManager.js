@@ -1,6 +1,6 @@
 'use strict';
 
-const { AutonomousCustomerServiceAgent } = require('./AutonomousCustomerServiceAgent');
+const { AgenticCore } = require('./AgenticCore');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AgentManager — armazena e gerencia múltiplas instâncias de agentes
@@ -11,8 +11,8 @@ class AgentManager {
     }
 
     add(id, agent) {
-        if (!(agent instanceof AutonomousCustomerServiceAgent)) {
-            throw new TypeError('Only instances of AutonomousCustomerServiceAgent can be added.');
+        if (!(agent instanceof AgenticCore)) {
+            throw new TypeError('Only instances of AgenticCore can be added.');
         }
         this.agents.set(id, agent);
     }
