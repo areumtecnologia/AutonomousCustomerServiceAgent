@@ -1028,6 +1028,13 @@ class AgenticCore extends EventEmitter {
         return true;
     }
 
+    #getRecoveryDelay(attempt) {
+        const baseDelayMs = 1000; // 1 segundo
+        const maxDelayMs = Math.min(this.#retryScheduleMinutes * 60_000, 90_000); // no máximo 90 segundos ou retryScheduleMinutes
+        const exponential = baseDelayMs * Math.pow(2, attempt - 1);
+        return Math.min(exponential, maxDelayMs);
+    }
+
     #buildUnavailableResponse(session) {
         return {
             sent_at: new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }),
@@ -1066,7 +1073,7 @@ class AgenticCore extends EventEmitter {
                     return this.#buildUnavailableResponse(session);
                 }
 
-                const delayMs = this.#retryScheduleMinutes * 60_000;
+                const delayMs = this.#getRecoveryDelay(attempt);
                 this.emit(AgentEvents.RETRY, { attempt, delay: delayMs, error: err, session: session.toJSON(), sync: true });
                 await this.#delay(delayMs);
                 attempt += 1;
@@ -1105,17 +1112,18 @@ class AgenticCore extends EventEmitter {
                     return;
                 }
 
-                const delayMs = this.#retryScheduleMinutes * 60_000;
+                const delayMs = this.#getRecoveryDelay(retryState.attempts);
                 this.emit(AgentEvents.RETRY, { attempt: retryState.attempts, delay: delayMs, error: err, session: session.toJSON(), sync: false });
                 retryState.timerId = setTimeout(executeRetry, delayMs);
             }
         };
 
-        retryState.timerId = setTimeout(executeRetry, this.#retryScheduleMinutes * 60_000);
+        const initialDelayMs = this.#getRecoveryDelay(1);
+        retryState.timerId = setTimeout(executeRetry, initialDelayMs);
         session.retryState = retryState;
         this.emit(AgentEvents.ASYNC_RETRY_SCHEDULED, {
             session: session.toJSON(),
-            delay: this.#retryScheduleMinutes * 60_000,
+            delay: initialDelayMs,
             attempts: retryState.attempts,
         });
 
@@ -1252,6 +1260,7 @@ ${this.#agent.company.name ? `<work_context>
 </work_context>` : ''}
 
 <mission>
+    - Role: ${this.#agent.mission.role}
     - Objective: ${this.#agent.mission.objective}
     - Execution Protocol: ${this.#agent.mission.instructions}
 </mission>

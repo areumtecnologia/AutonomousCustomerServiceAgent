@@ -5,7 +5,7 @@ const IMAGE_BASE64 = process.env.IMAGE_BASE64;
 const AUDIO_BASE64 = process.env.AUDIO_BASE64;
 const VIDEO_BASE64 = process.env.VIDEO_BASE64;
 const NVIDIA_API_KEY = process.env.NVIDIA_API_KEY;
-const { AutonomousCustomerServiceAgent, Type, AgentEvents, AgentConfig, OllamaProvider, NvidiaProvider } = require('../src') //require('@areumtecnologia/autonomouscustomerserviceagent');
+const { AgenticCore, Type, AgentEvents, AgentConfig, OllamaProvider, NvidiaProvider } = require('../src') //require('@areumtecnologia/autonomouscustomerserviceagent');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Exemplo de uso completo (multi-turno com tool call real)
@@ -19,19 +19,19 @@ const { AutonomousCustomerServiceAgent, Type, AgentEvents, AgentConfig, OllamaPr
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function example() {
-  const customerAgent = new AutonomousCustomerServiceAgent({
+  const customerAgent = new AgenticCore({
     // apiKey: GOOGLE_GEMINI_API_KEY,
     // model: 'gemma-4-31b-it', // 'gemma-4-26b-a4b-it',
     provider: new NvidiaProvider({
       apiKey: NVIDIA_API_KEY,
-      model: 'minimaxai/minimax-m3' // Modelo minimaxm3 conforme exemplo
+      model: 'google/diffusiongemma-26b-a4b-it'
     }),
-    // temperature: 0.1,
     agent: new AgentConfig(
       'Monnalisa',
       'Áreum Tecnologia',
       'Somos uma empresa de tecnologia especializada em soluções de Inteligência Artificial e Automação de Processos. Estamos localizados em Belém, Pará, Brasil.',
-      'Sua missão é atuar como assistente util',
+      'assistente útil',
+      'Conduzir uma conversa rápida, empática e fragmentada (estilo chat humano) em busca de atender o usuário.',
       `Atenda o usuario da melhor forma possível, utilizando as tools disponíveis para obter dados atualizados.`,
       'pt-BR'
     )
@@ -75,8 +75,8 @@ async function example() {
   );
 
   customerAgent.registerTool({
-    name: 'who_i_am',
-    description: 'Retorna informações sobre quem sou eu.',
+    name: 'about_me',
+    description: 'Retorna informações sobre você.',
     parameters: { type: Type.OBJECT, properties: {} },
   }, async () => {
     return 'Eu sou um assistente virtual chamado Monnalisa, criado pela Áreum Tecnologia para auxiliar clientes com suas solicitações.'
@@ -88,16 +88,27 @@ async function example() {
     origin: { id: '12345', type: 'whatsapp', description: 'Lead via WhatsApp.' }
   });
 
-  // await customerAgent.processMessage(session.id, "O que é isso?", { base64: IMAGE_BASE64, mimeType: 'image/png' });
-  await customerAgent.processMessage(session.id, "Olá, quem é você?", {});
-
-  await new Promise(resolve => setTimeout(resolve, 1000));
-
-  await customerAgent.processMessage(session.id, "Qual o seu nome?", {});
-
-  await new Promise(resolve => setTimeout(resolve, 1000));
-
-  await customerAgent.processMessage(session.id, "Que horas são?", {});
+  const questions = [{
+    text: "Olá, quem é você?",
+  }, {
+    text: "Que horas são?",
+  }, {
+    text: "O que é isso?",
+    attachments: { base64: IMAGE_BASE64, mimeType: 'image/png' }
+  }, {
+    text: "Descreva...",
+    //attachments: { base64: AUDIO_BASE64, mimeType: 'audio/wav' }
+  }];
+  // Marcar a hora de inicio do turno e quanto tempo ele durou
+  const startTime = Date.now();
+  for (const question of questions) {
+    console.log(`[${new Date().toISOString()}]: ${question.text}`);
+    await customerAgent.processMessage(session.id, question.text, question.attachments);
+    await new Promise(resolve => setTimeout(resolve, 1000));
+  }
+  const endTime = Date.now();
+  const duration = endTime - startTime;
+  console.log(`[Turno] Turno 1 finalizado em ${duration}ms`);
 };
 
 example();

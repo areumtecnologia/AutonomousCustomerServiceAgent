@@ -1,6 +1,6 @@
 # Agentic Core
 
-> **v2.4.0** — Framework profissional para orquestração de Agentes Autônomos em Node.js com suporte a múltiplos provedores redundantes (Google Gemini, OpenAI, Claude, Ollama, Nvidia), suporte nativo ao protocolo MCP (Model Context Protocol) como Cliente e Servidor, failover automático em caso de falhas 5xx, suporte a mídias (imagens, áudio, vídeo), gerenciamento concorrente transparente (debounce + abort) e sessões integradas.
+> **v3.0.1** — Framework profissional para orquestração de Agentes Autônomos em Node.js com suporte a múltiplos provedores redundantes (Google Gemini, OpenAI, Claude, Ollama, Nvidia), suporte nativo ao protocolo MCP (Model Context Protocol) como Cliente e Servidor, failover automático em caso de falhas 5xx, suporte a mídias (imagens, áudio, vídeo), gerenciamento concorrente transparente (debounce + abort) e sessões integradas.
 
 ---
 
@@ -86,6 +86,7 @@ const agentConfig = new AgentConfig(
   'Monnalisa',                                          // Nome do agente
   'Minha Empresa',                                      // Nome da empresa
   'Descrição da empresa e seus serviços.',              // Detalhes da empresa
+  'Agente de Vendas',                                   // Papel da missão (missionRole)
   'Atuar como agente de vendas e atendimento.',         // Objetivo da missão
   `1. Cumprimente o lead de forma acolhedora.
    2. Identifique as necessidades do lead.
@@ -226,18 +227,19 @@ const provider = new NvidiaProvider({
 
 ## 📋 API de Referência
 
-### `new AgentConfig(name, companyName, companyDetails, objective, instructions, reasoningLanguage?)`
+### `new AgentConfig(name, companyName, companyDetails, missionRole, objective, instructions, reasoningLanguage?)`
 
 Constrói a configuração do agente. **Obrigatório** — o construtor de `AgenticCore` exige uma instância de `AgentConfig`.
 
 | Parâmetro | Tipo | Padrão | Descrição |
 |---|---|---|---|
 | `name` | `string` | — | Nome do agente |
-| `companyName` | `string` | — | Nome do empresa |
+| `companyName` | `string` | — | Nome da empresa |
 | `companyDetails` | `string` | — | Descrição da empresa |
+| `missionRole` | `string` | — | Papel/Cargo do agente na missão (ex: 'Agente de Vendas') |
 | `objective` | `string` | — | Objetivo da missão |
 | `instructions` | `string` | — | Protocolo de execução (instruções detalhadas) |
-| `reasoningLanguage` | `string` | `'en_us'` | Idioma do campo `reasoning` nas respostas |
+| `reasoningLanguage` | `string` | `'en-US'` | Idioma do campo `reasoning` nas respostas |
 
 ---
 
@@ -259,8 +261,8 @@ Constrói a configuração do agente. **Obrigatório** — o construtor de `Agen
 | `topP` | `number` | `0.95` | Probabilidade de núcleo (top-p sampling) |
 | `thinkingLevel` | `string` | `'HIGH'` | Nível de raciocínio interno do modelo |
 | `maxOutputTokens` | `number` | `32768` | Tokens máximos na resposta |
-| `failureHandlingMode` | `'sync' \| 'async'` | `'sync'` | Modo de tratamento de falhas |
-| `retryScheduleMinutes` | `number` | `5` | Intervalo entre tentativas agendadas (min) |
+| `failureHandlingMode` | `'sync' \| 'async'` | `'sync'` | Modo de tratamento de falhas (com backoff progressivo exponencial) |
+| `retryScheduleMinutes` | `number` | `5` | Teto máximo para o intervalo entre as retentativas (min) |
 | `retryScheduleAttempts` | `number` | `24` | Máximo de tentativas agendadas |
 | `retryScheduleWindowMs` | `number` | `86400000` | Janela total de retentativas (24h) |
 | `unavailabilityMessage` | `string` | `'We are experiencing a temporary outage. We will contact you as soon as the problem is resolved.'` | Mensagem exibida ao usuário em caso de indisponibilidade |
@@ -541,11 +543,11 @@ mcpServer.start();
 
 ### `failureHandlingMode: 'sync'` (padrão)
 
-Quando o processamento falha, o agente bloqueia novas requisições da **mesma sessão** e tenta o reprocessamento em intervalos regulares até atingir o limite de tentativas ou a janela de tempo. Outras sessões são bloqueadas durante o retry.
+Quando o processamento falha, o agente bloqueia novas requisições da **mesma sessão** e tenta o reprocessamento. O tempo entre as tentativas de recuperação aumenta progressivamente (backoff exponencial iniciando em 1 segundo e dobrando a cada tentativa), mas respeitando o limite configurado em `retryScheduleMinutes` ou o limite máximo absoluto de 90 segundos. Outras sessões são bloqueadas durante o retry.
 
 ### `failureHandlingMode: 'async'`
 
-O agente responde imediatamente com a `unavailabilityMessage` e agenda retentativas em background. O atendimento de outras sessões **não é bloqueado**.
+O agente responde imediatamente com a `unavailabilityMessage` e agenda as retentativas em background, seguindo o mesmo backoff progressivo exponencial (dobrando a partir de 1 segundo) até o teto de 90 segundos. O atendimento de outras sessões **não é bloqueado**.
 
 ---
 
